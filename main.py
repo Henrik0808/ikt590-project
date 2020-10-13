@@ -153,7 +153,7 @@ def main():
                                                  config.SEMI_SUPERVISED_PHASE_1_N_EPOCHS)
 
     # Change last layer from classifying 11th word to categories
-    model_semi_supervised.fc2 = nn.Linear(config.HIDDEN_DIM, config.SEMI_SUPERVISED_PHASE_2_NUM_CLASSES).to(device)
+    model_semi_supervised.fc = nn.Linear(config.HIDDEN_DIM, config.SEMI_SUPERVISED_PHASE_2_NUM_CLASSES).to(device)
 
     # Semi-supervised phase 2 training/testing
     training_testing.run(device, dataset_sizes, dataloaders, config.SUPERVISED_NUM_CLASSES,

@@ -4,33 +4,23 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class Model(nn.Module):
-    def __init__(self, vocab_size, embed_dim, num_class, n_features, hidden_dim):
+    def __init__(self, vocab_size, embed_dim, num_class, hidden_dim):
         super(Model, self).__init__()
 
         self.embedding = nn.Embedding(vocab_size, embed_dim)
-        self.fc1 = nn.Linear(n_features * embed_dim, hidden_dim)  # TODO: Change number of out_features?
-        self.fc2 = nn.Linear(hidden_dim, num_class)
-        self.init_weights()
-
-    def init_weights(self):
-        initrange = 0.5
-        self.embedding.weight.data.uniform_(-initrange, initrange)
-        self.fc1.weight.data.uniform_(-initrange, initrange)
-        self.fc1.bias.data.zero_()
-        self.fc2.weight.data.uniform_(-initrange, initrange)
-        self.fc2.bias.data.zero_()
+        self.lstm = nn.LSTM(embed_dim, hidden_dim, batch_first=True)
+        self.fc = nn.Linear(hidden_dim, num_class)
 
     def forward(self, x):
         x = x.long()  # self.embedding(x) expects x of type LongTensor
 
         embedded = self.embedding(x)
-        out = embedded.view(embedded.size(0), -1)
-        out = F.relu(self.fc1(out))
-        out = self.fc2(out)
+        _, (last_hidden_state, _) = self.lstm(embedded)
+        linear_input = last_hidden_state[-1]
+        out = self.fc(linear_input)
 
         return out
 
@@ -114,8 +104,7 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
     plt.ion()  # interactive mode
 
     if model is None:
-        model = Model(config.VOCAB_SIZE, config.EMBED_DIM, num_classes, config.N_FEATURES, config.
-                      HIDDEN_DIM).to(device)
+        model = Model(config.VOCAB_SIZE, config.EMBED_DIM, num_classes, config.HIDDEN_DIM).to(device)
 
     criterion = torch.nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=4.0)
