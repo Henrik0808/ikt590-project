@@ -130,3 +130,6 @@ dmypy.json
 
 # Ignore .idea files
 .idea/
+
+# Ignore .vscode files
+.vscode/
