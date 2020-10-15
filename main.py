@@ -1,12 +1,14 @@
-import torch
-from torch.utils.data import Dataset, DataLoader
-import pandas as pd
 import os
-from keras_preprocessing import text, sequence
 import pathlib
+
+import pandas as pd
+import torch
+import torch.nn as nn
+from keras_preprocessing import sequence, text
+from torch.utils.data import DataLoader, Dataset
+
 import config
 import training_testing
-import torch.nn as nn
 
 
 class WordsDataset(Dataset):

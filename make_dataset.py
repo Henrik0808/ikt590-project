@@ -1,7 +1,9 @@
-from sklearn.datasets import fetch_20newsgroups
-import re
-import random
 import os
+import random
+import re
+
+from sklearn.datasets import fetch_20newsgroups
+
 import config
 
 
