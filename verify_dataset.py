@@ -43,7 +43,7 @@ def verify_single(filename: str) -> int:
             )
             # output must be a string
             assert_continue(
-                ' ' not in y,
+                type(y) is str,
                 '11th word type',
                 filename,
                 counter,
