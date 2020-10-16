@@ -5,7 +5,7 @@ SIZE_OF_DATASET = 100_000
 DATA_DIR = 'data/'
 
 FILE_TRAINING = 'words_train.csv'
-FILE_VALIDATION = 'words_val.csv'
+FILE_VALIDATION = 'words_valid.csv'
 FILE_TESTING = 'words_test.csv'
 
 SUPERVISED = 0

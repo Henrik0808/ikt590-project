@@ -2,112 +2,126 @@ import os
 import random
 import re
 
+import numpy as np
 from sklearn.datasets import fetch_20newsgroups
 
 import config
 
+if __name__ == '__main__':
+    categories = {
+        'sports': {'rec.sport.baseball', 'rec.sport.hockey'},
+        'religion': {'alt.atheism', 'soc.religion.christian', 'talk.religion.misc'},
+        'computers': {'comp.graphics', 'comp.os.ms-windows.misc'},
+    }
 
-# Create file containing training, validation or testing dataset
-def create_dataset_file(file, dataset, category_id_to_name):
-    with open(file, mode='w', encoding='utf-8') as f:
-        for X, Y, eleventh_word in dataset:
-            f.write(category_id_to_name(Y) + ',' + X + ',' + eleventh_word + '\n')
+    categories_flat = []
+    id2cat = {}
 
+    idx = 0
+    for category, boards in categories.items():
+        for board in boards:
+            categories_flat.append(board)
+            id2cat[idx] = category
+            idx += 1
+    del idx
+    print('Working on', len(categories), 'categories;',
+          ', '.join(categories.keys()))
 
-def main():
-    if not os.path.isdir('data'):
-        os.mkdir('data')
-
-    categories = ('rec.sport.baseball', 'rec.sport.hockey',
-                  'alt.atheism', 'soc.religion.christian', 'talk.religion.misc',
-                  'comp.graphics', 'comp.os.ms-windows.misc')
-
-    category_id_to_name = lambda x: 'sports' if x < 2 else ('religion' if x < 5 else 'computers')
-
-    Xs, Ys = fetch_20newsgroups(
+    # External fetch, might be cached
+    print('Fetching dataset ...')
+    messages, category_ids = fetch_20newsgroups(
         subset='all',
-        categories=categories,
-        remove=('headers', 'footers', 'quotes'),
+        categories=categories_flat,
+        remove={'headers', 'footers', 'quotes'},
         return_X_y=True
     )
+    print('Fetched dataset!')
+
+    # Randomize the dataset order,
+    # we don't know if it's fairly sorted
+    random.seed(42)
+    temp = list(zip(messages, category_ids))
+    random.shuffle(temp)
+    messages, category_ids = zip(*temp)
+    del temp
 
     PATTERN_SENTENCE_END = re.compile(r'[.!?]+')
     PATTERN_WHITESPACE = re.compile(r'\s+')
     PATTERN_NOISE = re.compile(r'[,"()[\]:^<>*~_|#{}+]+')
-    ignore_sequences = ('---', '==', '\\\\', '//', '@')
+    ignore_sequences = {'---', '==', '\\\\', '//', '@'}
 
-    clean_10 = []
+    # Keep track category each data point is in
+    metrics = {k: 0 for k in categories.keys()}
 
-    for X, Y in zip(Xs, Ys):
-        sentences = PATTERN_SENTENCE_END.split(X)
-        sentences = [PATTERN_NOISE.sub('', PATTERN_WHITESPACE.sub(' ', sentence)).strip() for sentence in sentences]
-        sentences = [sentence.lower() for sentence in sentences if sentence != '']
+    data_points = []
+    for message, category_id in zip(messages, category_ids):
+        # Quit early when we don't need more data
+        if len(data_points) >= config.SIZE_OF_DATASET:
+            break
+
+        # Split message into sentences
+        sentences = PATTERN_SENTENCE_END.split(message)
+        # Replace whitespace with a single space
+        sentences = [PATTERN_WHITESPACE.sub(' ', x) for x in sentences]
+        # Remove any unwanted characters, including bounding whitespace
+        sentences = [PATTERN_NOISE.sub('', x).strip() for x in sentences]
+        # For every non-empty sentence, lower all characters
+        sentences = [x.lower() for x in sentences if x != '']
 
         for sentence in sentences:
+            # Remove complete sentence if it contains certain sequences
             if any(sequence in sentence for sequence in ignore_sequences):
                 continue
 
-            word_count = len(sentence.split())
+            words = sentence.split()
 
-            if word_count >= 11:  # Only sentences with at least 11 words are used for creating the dataset
-                words = sentence.split()
+            # Skip sentences which are not at least 11 words long
+            if not len(words) >= 11:
+                continue
 
-                # Left side of moving 'window',
-                window_left_index = 0
+            # Iterate over words in a sliding window
+            for head, tail in zip(range(len(words)-10), range(10, len(words))):
+                if len(data_points) >= config.SIZE_OF_DATASET:
+                    break
 
-                # Right side of moving 'window'
-                window_right_index = 10
+                # the 10 first words
+                X = words[head:tail]
+                X = ' '.join(X)
+                # the 11th word
+                Y = words[tail]
 
-                while True:
-                    # Get 10 words from sentence within the 'moving window'
-                    ten_word_sentence = words[window_left_index:window_right_index]
-                    ten_word_sentence_full = ' '.join(ten_word_sentence)
+                data_points.append((id2cat[category_id], X, Y))
+                metrics[id2cat[category_id]] += 1
 
-                    clean_10.append((ten_word_sentence_full, Y, words[window_right_index]))
+    # Metrics
+    print(f'Found a total of {len(data_points)} data points:')
+    for category, hits in metrics.items():
+        print('\tCategory:', category,
+              '\tHits:', hits,
+              f'({hits / len(data_points):.1%})')
 
-                    # Move window to the right one step within the sentence
-                    window_left_index += 1
-                    window_right_index += 1
+    # Randomize the data points
+    random.seed(42)
+    random.shuffle(data_points)
 
-                    # If the window has reached the last 11-word part of the sentence, break out of loop
-                    if window_right_index == len(words):
-                        break
+    # Split for train, valid, and test datasets
+    ratios = (.8, .1, .1)
+    if not sum(ratios) == 1.:
+        raise Exception('Splits must add up to 100%')
 
-    random.shuffle(clean_10)
+    split_data = np.split(data_points, [
+        int(ratios[0] * len(data_points)),
+        int((ratios[0] + ratios[1]) * len(data_points))
+    ])
 
-    clean_10 = clean_10[:config.SIZE_OF_DATASET]
+    # Write data points to file
+    filenames = (config.FILE_TRAINING,
+                    config.FILE_VALIDATION,
+                    config.FILE_TESTING)
 
-    sum1, sum2, sum3 = 0, 0, 0
-
-    for _, Y, eleventh_word in clean_10:
-        cat = category_id_to_name(Y)
-
-        if cat == 'sports':
-            sum1 += 1
-        elif cat == 'religion':
-            sum2 += 1
-        else:
-            sum3 += 1
-
-    print(f'words_10.csv, sports: {sum1}, religion: {sum2}, computers: {sum3}')
-
-    train_idx = int(len(clean_10) * config.TRAINING_RATIO)
-    val_idx = int(len(clean_10) * config.VAL_RATIO + train_idx)
-
-    # Split total dataset (clean_10) into training, validation and testing datasets
-    words_train = clean_10[:train_idx]
-    words_val = clean_10[train_idx:val_idx]
-    words_test = clean_10[val_idx:]
-
-    # Create file containing training dataset
-    create_dataset_file(os.path.join(config.DATA_DIR, config.FILE_TRAINING), words_train, category_id_to_name)
-
-    # Create file containing validation dataset
-    create_dataset_file(os.path.join(config.DATA_DIR, config.FILE_VALIDATION), words_val, category_id_to_name)
-
-    # Create file containing testing dataset
-    create_dataset_file(os.path.join(config.DATA_DIR, config.FILE_TESTING), words_test, category_id_to_name)
-
-
-if __name__ == '__main__':
-    main()
+    os.chdir('data')
+    for filename, data_points in zip(filenames, split_data):
+        print(f'Writing data to ... {filename}')
+        with open(filename, mode='w', encoding='utf-8') as f:
+            for data_point in data_points:
+                f.write(','.join(data_point) + '\n')
