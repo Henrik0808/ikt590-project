@@ -19,7 +19,7 @@ if __name__ == '__main__':
     messages, category_ids = fetch_20newsgroups(
         subset='all',
         categories=categories_flat,
-        remove={'headers', 'footers', 'quotes'},
+        remove=('headers', 'footers', 'quotes'),
         return_X_y=True
     )
     print('Fetched dataset!')
@@ -34,7 +34,7 @@ if __name__ == '__main__':
 
     PATTERN_SENTENCE_END = re.compile(r'[.!?]+')
     PATTERN_WHITESPACE = re.compile(r'\s+')
-    PATTERN_NOISE = re.compile(r'[,"()[\]:^<>*~_|#{}+]+')
+    PATTERN_NOISE = re.compile(r'[,"()[\]\\:^<=>$%&/`;*~_|#{}+-]+')
     ignore_sequences = {'---', '==', '\\\\', '//', '@'}
 
     # Keep track category each record is in
@@ -42,6 +42,7 @@ if __name__ == '__main__':
 
     records = []
     for message, category_id in zip(messages, category_ids):
+        # TODO: check if category is correct
         # Quit early when we don't need more data
         if len(records) >= config.SIZE_OF_DATASET:
             break
@@ -91,7 +92,7 @@ if __name__ == '__main__':
     random.shuffle(records)
 
     # Split for train, valid, and test datasets
-    ratios = (.8, .1, .1)
+    ratios = (config.TRAINING_RATIO, config.VAL_RATIO, config.TEST_RATIO)
     if not sum(ratios) == 1.:
         raise Exception('Splits must add up to 100%')
 

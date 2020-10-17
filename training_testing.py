@@ -12,7 +12,7 @@ class Model(nn.Module):
     def __init__(self, vocab_size, embed_dim, num_class, hidden_dim):
         super(Model, self).__init__()
 
-        self.embedding = nn.Embedding(vocab_size, embed_dim)
+        self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
         self.lstm = nn.LSTM(embed_dim, hidden_dim, batch_first=True)
         self.fc = nn.Linear(hidden_dim, num_class)
 
