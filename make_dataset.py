@@ -42,7 +42,6 @@ if __name__ == '__main__':
 
     records = []
     for message, category_id in zip(messages, category_ids):
-        # TODO: check if category is correct
         # Quit early when we don't need more data
         if len(records) >= config.SIZE_OF_DATASET:
             break
