@@ -13,7 +13,7 @@ SUPERVISED = 0
 SEMI_SUPERVISED_PHASE_1 = 1
 SEMI_SUPERVISED_PHASE_2 = 2
 
-SUPERVISED_CLASSES = ('sports', 'religion', 'computers')
+SUPERVISED_CLASSES = ('religion', 'computers', 'vehicles', 'sports', 'science')
 
 VOCAB_SIZE = 0
 EMBED_DIM = 16
