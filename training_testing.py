@@ -27,7 +27,7 @@ class Model(nn.Module):
         return out
 
 
-def train(train_len, optimizer, model, criterion, scheduler, epoch_loss, device, dataloaders, semi_supervised=0):
+def train(train_len, optimizer, model, criterion, epoch_loss, device, dataloaders, semi_supervised=0):
     # Train the model
 
     train_loss = torch.zeros(1, dtype=torch.float).to(device)
@@ -50,9 +50,6 @@ def train(train_len, optimizer, model, criterion, scheduler, epoch_loss, device,
         epoch_loss.append(loss.item())
         optimizer.step()
         train_acc += (output.argmax(1) == y).sum().item()
-
-    # Adjust the learning rate
-    scheduler.step()
 
     return train_loss / train_len, train_acc / train_len
 
@@ -109,8 +106,7 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
         model = Model(config.VOCAB_SIZE, config.EMBED_DIM, num_classes, config.HIDDEN_DIM).to(device)
 
     criterion = torch.nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=4.0)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1, gamma=0.9)
+    optimizer = torch.optim.Adam(model.parameters())
 
     train_len = dataset_sizes[config.FILE_TRAINING]
 
@@ -130,7 +126,7 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
         epoch_loss_train = []
         epoch_loss_val = []
 
-        train_loss, train_acc = train(train_len, optimizer, model, criterion, scheduler, epoch_loss_train, device,
+        train_loss, train_acc = train(train_len, optimizer, model, criterion, epoch_loss_train, device,
                                       dataloaders, semi_supervised=semi_supervised)
 
         loss_vals_train.append(sum(epoch_loss_train) / len(epoch_loss_train))
