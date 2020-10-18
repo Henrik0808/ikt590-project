@@ -6,6 +6,7 @@ import numpy as np
 from sklearn.datasets import fetch_20newsgroups
 
 import config
+from utils import cwd
 
 if __name__ == '__main__':
     categories = {
@@ -115,13 +116,15 @@ if __name__ == '__main__':
     ])
 
     # Write data points to file
-    filenames = (config.FILE_TRAINING,
-                    config.FILE_VALIDATION,
-                    config.FILE_TESTING)
+    filenames = (
+        config.FILE_TRAINING,
+        config.FILE_VALIDATION,
+        config.FILE_TESTING
+    )
 
-    os.chdir('data')
-    for filename, data_points in zip(filenames, split_data):
-        print(f'Writing data to ... {filename}')
-        with open(filename, mode='w', encoding='utf-8') as f:
-            for data_point in data_points:
-                f.write(','.join(data_point) + '\n')
+    with cwd(config.DATA_DIR):
+        for filename, data_points in zip(filenames, split_data):
+            print(f'Writing data to ... {filename}')
+            with open(filename, mode='w', encoding='utf-8') as f:
+                for data_point in data_points:
+                    f.write(','.join(data_point) + '\n')

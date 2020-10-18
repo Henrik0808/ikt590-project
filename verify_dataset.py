@@ -1,7 +1,8 @@
 import argparse
 import os
 
-from config import SUPERVISED_CLASSES as valid_categories
+import config
+from utils import cwd
 
 
 def assert_continue(expr: bool, err_msg: str, filename: str, index: int):
@@ -20,7 +21,7 @@ def verify_single(filename: str) -> int:
 
             # category must be valid
             assert_continue(
-                cat in valid_categories,
+                cat in config.SUPERVISED_CLASSES,
                 'category',
                 filename,
                 counter,
@@ -58,7 +59,11 @@ if __name__ == '__main__':
     parser.add_argument(
         'files',
         nargs='*',
-        default=('words_test.csv', 'words_train.csv', 'words_val.csv'),
+        default=(
+            config.FILE_TRAINING,
+            config.FILE_VALIDATION,
+            config.FILE_TESTING
+        ),
     )
     parser.add_argument(
         '--no-debug',
@@ -69,12 +74,12 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--data-dir',
-        default='data'
+        default=config.DATA_DIR
     )
     args = parser.parse_args()
 
-    os.chdir(args.data_dir)
-    for filename in args.files:
-        counter = verify_single(filename)
-        if args.debug:
-            print(f'{filename} has {counter} datapoints')
+    with cwd(args.data_dir):
+        for filename in args.files:
+            counter = verify_single(filename)
+            if args.debug:
+                print(f'{filename} has {counter} datapoints')
