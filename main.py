@@ -1,14 +1,15 @@
 import os
 import pathlib
 
-import pandas as pd
+import numpy as np
 import torch
 import torch.nn as nn
-from keras_preprocessing import sequence, text
+from keras_preprocessing import text
 from torch.utils.data import DataLoader, Dataset
 
 import config
 import training_testing
+import utils
 
 
 class WordsDataset(Dataset):
@@ -18,108 +19,67 @@ class WordsDataset(Dataset):
     # The same tokenizer is used in all three dataset instances, to use the same indexes/tokens for the same words etc.
     tokenizer = None
 
-    def __init__(self, csv_file, root_dir, transform=None):
+    @staticmethod
+    def create_tokenizer(records):
+        # Unknown words will have index 1
+        tokenizer = text.Tokenizer(oov_token=1, filters='')
+        # Join 10 word sentence and 11th word by space
+        tokenizer.fit_on_texts(' '.join(record) for record in records[:, 1:])
+        # TODO: check if we need +1 here
+        config.VOCAB_SIZE = len(tokenizer.word_index)
+        return tokenizer
+
+    @staticmethod
+    def read_records(dataset_file):
+        with open(dataset_file, mode='r', encoding='utf-8') as f:
+            return np.array([
+                line.split(',') for line in 
+                (line.rstrip() for line in f.readlines())
+            ])
+
+    def __init__(self, dataset_file, transform=None):
         """
         Args:
-            csv_file (string): Path to the csv file.
-            root_dir (string): Directory containing all three raw words datasets.
+            dataset_file (string): Path to the csv file.
             transform (callable, optional): Optional transform to be applied
                 on a sample. Probably not needed here.
         """
-        self.ten_words_tokenized, self.categories_ints, self.eleventh_word = self.get_datasets(csv_file)
-        self.root_dir = root_dir
+        records = self.__class__.read_records(dataset_file)
+        self.len = len(records)
+
+        if not self.__class__.tokenizer:
+            self.__class__.tokenizer =\
+                self.__class__.create_tokenizer(records)
+
+        self.records_tokenized = self.tokenize(records)
         self.transform = transform
 
     def __len__(self):
-        return len(self.ten_words_tokenized)
+        return self.len
 
     def __getitem__(self, idx):
-        if torch.is_tensor(idx):
+        if torch.is_tensor(idx): # ??? -- is this in use?
             idx = idx.tolist()
 
-        category = self.categories_ints[idx]
-        ten_words = self.ten_words_tokenized[idx]
-        eleventh_word = self.eleventh_word[idx]
-
-        sample = {'10 words': ten_words, 'category': category, 'eleventh word': eleventh_word}
+        sample = {k: v[idx] for k, v in self.records_tokenized.items()}
 
         if self.transform:
-            sample = self.transform(sample)
+            return self.transform(sample)
 
         return sample
 
-    def get_datasets(self, csv_file):
-        words = None
-        ten_word_sentences_list_of_strings = None
+    def tokenize(self, records):
+        _, cat2id, _ = utils.get_categories()
 
-        # if tokenizer is None, create it. Else use the already created tokenizer
-        if self.tokenizer is None:
-            words, ten_word_sentences_list_of_strings = self.create_train_tokenizer(csv_file)
+        tokenized = np.asarray(self.__class__.tokenizer.texts_to_sequences(
+            ' '.join(record) for record in records[:, 1:]
+        ), dtype=np.int)
 
-        # Load csv rows into the words variable, if it's None
-        if words is None:
-            words = pd.read_csv(csv_file)  # If you want to load fewer rows: add parameter nrows=1000 for example
-
-        ten_word_sentences_list_of_lists_with_category = words.iloc[:, [0]].values
-        ten_word_sentences_list_of_lists_with_eleventh_word = words.iloc[:, [2]].values
-
-        # Load the 10-word sentences into the ten_word_sentences_list_of_strings variable, if not already loaded
-        if ten_word_sentences_list_of_strings is None:
-            ten_word_sentences_list_of_lists_with_string = words.iloc[:, [1]].values
-            ten_word_sentences_list_of_strings = [s[0] for s in ten_word_sentences_list_of_lists_with_string]
-
-        ten_word_sentences_list_of_categories = [s[0] for s in ten_word_sentences_list_of_lists_with_category]
-
-        # 0: sports, 1: religion, 2: computers
-        ten_word_sentences_list_of_categories_as_ints = [0 if c == 'sports' else (1 if c == 'religion' else 2) for c in
-                                                         ten_word_sentences_list_of_categories]
-
-        list_of_eleventh_word = [s[0] for s in ten_word_sentences_list_of_lists_with_eleventh_word]
-
-        # Make sure list of eleventh words contains only strings
-        # TODO: Fix bug causing eleventh word to not always be a string
-        list_of_eleventh_word = [w if isinstance(w, str) else str(w) for w in list_of_eleventh_word]
-
-        eleventh_word_tokenized = self.tokenizer.texts_to_sequences(list_of_eleventh_word)
-
-        for i in eleventh_word_tokenized:
-            # If tokenized eleventh word list is empty, append 1 for now
-            # TODO: Tokenizer removes/ignores certain 'words', such as '-'. This causes some i's here to be empty
-            if not i:
-                i.append(1)  # 1 is used by tokenizer for appending unknown word/index
-
-        eleventh_word_tokenized = [i[0] for i in eleventh_word_tokenized]
-
-        ten_word_sentences_tokenized = self.tokenizer.texts_to_sequences(ten_word_sentences_list_of_strings)
-
-        # By default, index 0 is used as padding token on the left side of the sentence
-        # TODO: Fix bug with 'ten word sentence' sometimes not having length 10
-        ten_word_sentences_tokenized = sequence.pad_sequences(ten_word_sentences_tokenized,
-                                                              maxlen=10)
-
-        return ten_word_sentences_tokenized, ten_word_sentences_list_of_categories_as_ints, eleventh_word_tokenized
-
-    @staticmethod
-    def create_train_tokenizer(csv_file):
-
-        # Create tokenizer
-        words = pd.read_csv(csv_file)
-
-        # Unknown words will have index 1
-        tokenizer = text.Tokenizer(oov_token=1)
-
-        ten_word_sentences_list_of_lists_with_string = words.iloc[:, [1]].values
-        ten_word_sentences_list_of_strings = [s[0] for s in ten_word_sentences_list_of_lists_with_string]
-
-        tokenizer.fit_on_texts(ten_word_sentences_list_of_strings)
-
-        config.VOCAB_SIZE = len(tokenizer.word_index) + 1  # TODO: remove +1 if pad_sequences is not used
-
-        # Update the tokenizer class variable
-        WordsDataset.tokenizer = tokenizer
-
-        return words, ten_word_sentences_list_of_strings
-
+        return {
+            'category': [cat2id[record] for record in records[:, 0]],
+            '10 words': tokenized[:, :-1],
+            'eleventh word': tokenized[:, -1],
+        }
 
 def main():
     pathlib.Path('outputs/graphs/supervised_training').mkdir(parents=True, exist_ok=True)
@@ -127,7 +87,7 @@ def main():
     pathlib.Path('outputs/graphs/semi_supervised_training/phase_two').mkdir(parents=True, exist_ok=True)
 
     # Create WordsDatasets for training, validation and testing
-    words_datasets = {x: WordsDataset(os.path.join(config.DATA_DIR, x), config.DATA_DIR)
+    words_datasets = {x: WordsDataset(os.path.join(config.DATA_DIR, x))
                       for x in [config.FILE_TRAINING, config.FILE_VALIDATION, config.FILE_TESTING]}
 
     # Create Dataloaders for training, validation and testing
