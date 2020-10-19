@@ -31,7 +31,7 @@ NUM_WORKERS = 0  # TODO: Fix bug where NUM_WORKERS >= 4 leads to WinError 1455
 
 # Supervised (input: 10 words, output: category)
 SUPERVISED_NUM_CLASSES = len(categories)
-SUPERVISED_N_EPOCHS = 0
+SUPERVISED_N_EPOCHS = 30
 
 # Semi-supervised phase 1 (input: 10 words, output: 11th word)
 SEMI_SUPERVISED_PHASE_1_N_EPOCHS = 30
