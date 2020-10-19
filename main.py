@@ -25,15 +25,15 @@ class WordsDataset(Dataset):
         tokenizer = text.Tokenizer(oov_token=1, filters='')
         # Join 10 word sentence and 11th word by space
         tokenizer.fit_on_texts(' '.join(record) for record in records[:, 1:])
-        # TODO: check if we need +1 here
-        config.VOCAB_SIZE = len(tokenizer.word_index)
+        # Adding 1 to vocabulary size because of additional reserved padding index 0
+        config.VOCAB_SIZE = len(tokenizer.word_index) + 1
         return tokenizer
 
     @staticmethod
     def read_records(dataset_file):
         with open(dataset_file, mode='r', encoding='utf-8') as f:
             return np.array([
-                line.split(',') for line in 
+                line.split(',') for line in
                 (line.rstrip() for line in f.readlines())
             ])
 
@@ -73,7 +73,7 @@ class WordsDataset(Dataset):
 
         tokenized = np.asarray(self.__class__.tokenizer.texts_to_sequences(
             ' '.join(record) for record in records[:, 1:]
-        ), dtype=np.int)
+        ), dtype=np.int64)
 
         return {
             'category': [cat2id[record] for record in records[:, 0]],

@@ -1,4 +1,5 @@
 import os
+import config
 
 
 class cwd:
@@ -14,11 +15,7 @@ class cwd:
 
 
 def get_categories():
-    categories = {
-        'sports': {'rec.sport.baseball', 'rec.sport.hockey'},
-        'religion': {'alt.atheism', 'soc.religion.christian', 'talk.religion.misc'},
-        'computers': {'comp.graphics', 'comp.os.ms-windows.misc'},
-    }
+    categories = config.categories
 
     categories_flat = []
     id2cat = {}

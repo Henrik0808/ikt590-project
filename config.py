@@ -13,19 +13,25 @@ SUPERVISED = 0
 SEMI_SUPERVISED_PHASE_1 = 1
 SEMI_SUPERVISED_PHASE_2 = 2
 
-SUPERVISED_CLASSES = ('religion', 'computers', 'vehicles', 'sports', 'science')
+categories = {
+    'religion': {'soc.religion.christian'},
+    'computers': {'comp.graphics', 'comp.os.ms-windows.misc', 'comp.sys.ibm.pc.hardware'},
+    'vehicles': {'rec.autos', 'rec.motorcycles'},
+    'sports': {'rec.sport.baseball', 'rec.sport.hockey'},
+    'science': {'sci.med', 'sci.space'}
+}
 
-VOCAB_SIZE = 0
+VOCAB_SIZE = None
 EMBED_DIM = 512
 BATCH_SIZE = 512
 N_FEATURES = 10
 HIDDEN_DIM = 512
 
-NUM_WORKERS = 0  # TODO: Fix bug where NUM_WORKERS >= 4 leads to Winerror 1455
+NUM_WORKERS = 0  # TODO: Fix bug where NUM_WORKERS >= 4 leads to WinError 1455
 
 # Supervised (input: 10 words, output: category)
-SUPERVISED_NUM_CLASSES = len(SUPERVISED_CLASSES)
-SUPERVISED_N_EPOCHS = 30
+SUPERVISED_NUM_CLASSES = len(categories)
+SUPERVISED_N_EPOCHS = 0
 
 # Semi-supervised phase 1 (input: 10 words, output: 11th word)
 SEMI_SUPERVISED_PHASE_1_N_EPOCHS = 30

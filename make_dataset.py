@@ -1,4 +1,3 @@
-import os
 import random
 import re
 
@@ -34,7 +33,8 @@ if __name__ == '__main__':
 
     PATTERN_SENTENCE_END = re.compile(r'[.!?]+')
     PATTERN_WHITESPACE = re.compile(r'\s+')
-    PATTERN_NOISE = re.compile(r'[,"()[\]\\:^<=>$%&/`;*~_|#{}+-]+')
+    # TODO: Add \\=$%&/`;- to PATTERN_NOISE? If so: PATTERN_NOISE = re.compile(r'[,"()[\]\\:^<=>$%&/`;*~_|#{}+-]+')
+    PATTERN_NOISE = re.compile(r'[,"()[\]:^<>*~_|#{}+]+')
     ignore_sequences = {'---', '==', '\\\\', '//', '@'}
 
     # Keep track category each record is in

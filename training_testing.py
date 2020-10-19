@@ -17,8 +17,6 @@ class Model(nn.Module):
         self.fc = nn.Linear(hidden_dim, num_class)
 
     def forward(self, x):
-        x = x.long()  # self.embedding(x) expects x of type LongTensor
-
         embedded = self.embedding(x)
         _, (last_hidden_state, _) = self.lstm(embedded)
         linear_input = last_hidden_state[-1]
