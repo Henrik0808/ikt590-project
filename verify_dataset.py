@@ -21,7 +21,7 @@ def verify_single(filename: str) -> int:
 
             # category must be valid
             assert_continue(
-                cat in config.SUPERVISED_CLASSES,
+                cat in config.categories,
                 'category',
                 filename,
                 counter,

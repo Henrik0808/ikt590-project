@@ -58,7 +58,7 @@ class WordsDataset(Dataset):
         return self.len
 
     def __getitem__(self, idx):
-        if torch.is_tensor(idx): # ??? -- is this in use?
+        if torch.is_tensor(idx):  # ??? -- is this in use?
             idx = idx.tolist()
 
         sample = {k: v[idx] for k, v in self.records_tokenized.items()}
