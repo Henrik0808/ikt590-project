@@ -140,10 +140,17 @@ def main():
                                                          config.FILE_TESTING]}
 
     # Run program on GPU if available, else run on CPU
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Uncomment the line below to force running on CPU
     # device = 'cpu'
+
+    if device.type == 'cuda':
+        print('[*] Using the GPU:', torch.cuda.get_device_name(device))
+        if torch.cuda.device_count() > 1:
+            print('[!] Multiple GPUs detected, only one device will be used')
+    else:
+        print('[!] Using the CPU')
 
     # Supervised training/testing
     training_testing.run(device, dataset_sizes, dataloaders, config.SUPERVISED_NUM_CLASSES,
