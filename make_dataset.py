@@ -6,27 +6,13 @@ import numpy as np
 from sklearn.datasets import fetch_20newsgroups
 
 import config
-from utils import cwd
+import utils
+from utils import get_categories
 
 if __name__ == '__main__':
-    categories = {
-        'sports': {'rec.sport.baseball', 'rec.sport.hockey'},
-        'religion': {'alt.atheism', 'soc.religion.christian', 'talk.religion.misc'},
-        'computers': {'comp.graphics', 'comp.os.ms-windows.misc'},
-    }
-
-    categories_flat = []
-    id2cat = {}
-
-    idx = 0
-    for category, boards in categories.items():
-        for board in boards:
-            categories_flat.append(board)
-            id2cat[idx] = category
-            idx += 1
-    del idx
-    print('Working on', len(categories), 'categories;',
-          ', '.join(categories.keys()))
+    id2cat, cat2id, categories_flat = get_categories()
+    print('Working on', len(cat2id), 'categories;',
+          ', '.join(cat2id.keys()))
 
     # External fetch, might be cached
     print('Fetching dataset ...')
@@ -51,13 +37,13 @@ if __name__ == '__main__':
     PATTERN_NOISE = re.compile(r'[,"()[\]:^<>*~_|#{}+]+')
     ignore_sequences = {'---', '==', '\\\\', '//', '@'}
 
-    # Keep track category each data point is in
-    metrics = {k: 0 for k in categories.keys()}
+    # Keep track category each record is in
+    metrics = {k: 0 for k in cat2id.keys()}
 
-    data_points = []
+    records = []
     for message, category_id in zip(messages, category_ids):
         # Quit early when we don't need more data
-        if len(data_points) >= config.SIZE_OF_DATASET:
+        if len(records) >= config.SIZE_OF_DATASET:
             break
 
         # Split message into sentences
@@ -66,8 +52,8 @@ if __name__ == '__main__':
         sentences = [PATTERN_WHITESPACE.sub(' ', x) for x in sentences]
         # Remove any unwanted characters, including bounding whitespace
         sentences = [PATTERN_NOISE.sub('', x).strip() for x in sentences]
-        # For every non-empty sentence, lower all characters
-        sentences = [x.lower() for x in sentences if x != '']
+        # Remove empty sentences
+        sentences = [x for x in sentences if x != '']
 
         for sentence in sentences:
             # Remove complete sentence if it contains certain sequences
@@ -82,7 +68,7 @@ if __name__ == '__main__':
 
             # Iterate over words in a sliding window
             for head, tail in zip(range(len(words)-10), range(10, len(words))):
-                if len(data_points) >= config.SIZE_OF_DATASET:
+                if len(records) >= config.SIZE_OF_DATASET:
                     break
 
                 # the 10 first words
@@ -91,40 +77,39 @@ if __name__ == '__main__':
                 # the 11th word
                 Y = words[tail]
 
-                data_points.append((id2cat[category_id], X, Y))
+                records.append((id2cat[category_id], X, Y))
                 metrics[id2cat[category_id]] += 1
 
     # Metrics
-    print(f'Found a total of {len(data_points)} data points:')
+    print(f'Found a total of {len(records)} records:')
     for category, hits in metrics.items():
         print('\tCategory:', category,
               '\tHits:', hits,
-              f'({hits / len(data_points):.1%})')
+              f'({hits / len(records):.1%})')
 
-    # Randomize the data points
-    random.seed(42)
-    random.shuffle(data_points)
+    # Randomize the records
+    random.shuffle(records)
 
     # Split for train, valid, and test datasets
     ratios = (.8, .1, .1)
     if not sum(ratios) == 1.:
         raise Exception('Splits must add up to 100%')
 
-    split_data = np.split(data_points, [
-        int(ratios[0] * len(data_points)),
-        int((ratios[0] + ratios[1]) * len(data_points))
+    split_data = np.split(records, [
+        int(ratios[0] * len(records)),
+        int((ratios[0] + ratios[1]) * len(records))
     ])
 
-    # Write data points to file
+    # Write records to file
     filenames = (
         config.FILE_TRAINING,
         config.FILE_VALIDATION,
         config.FILE_TESTING
     )
 
-    with cwd(config.DATA_DIR):
-        for filename, data_points in zip(filenames, split_data):
-            print(f'Writing data to ... {filename}')
+    with utils.cwd(config.DATA_DIR):
+        for filename, records in zip(filenames, split_data):
+            print(f'Writing records to ... {filename}')
             with open(filename, mode='w', encoding='utf-8') as f:
-                for data_point in data_points:
-                    f.write(','.join(data_point) + '\n')
+                for record in records:
+                    f.write(','.join(record) + '\n')
