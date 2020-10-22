@@ -81,6 +81,7 @@ class WordsDataset(Dataset):
             'eleventh word': tokenized[:, -1],
         }
 
+
 def main():
     pathlib.Path('outputs/graphs/supervised_training').mkdir(parents=True, exist_ok=True)
     pathlib.Path('outputs/graphs/semi_supervised_training/phase_one').mkdir(parents=True, exist_ok=True)

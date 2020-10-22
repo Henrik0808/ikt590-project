@@ -4,8 +4,105 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
+import random
 
 import config
+
+
+class Encoder(nn.Module):
+    def __init__(self, input_size, embedding_size, hidden_size, num_layers, p):
+        super(Encoder, self).__init__()
+        self.dropout = nn.Dropout(p)
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+
+        self.embedding = nn.Embedding(input_size, embedding_size)
+        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, dropout=p)
+
+    def forward(self, x):
+        # x shape: (seq_length, N) where N is batch size
+
+        embedding = self.dropout(self.embedding(x))
+        # embedding shape: (seq_length, N, embedding_size)
+
+        outputs, (hidden, cell) = self.rnn(embedding)
+        # outputs shape: (seq_length, N, hidden_size)
+
+        return hidden, cell
+
+
+class Decoder(nn.Module):
+    def __init__(
+        self, input_size, embedding_size, hidden_size, output_size, num_layers, p
+    ):
+        super(Decoder, self).__init__()
+        self.dropout = nn.Dropout(p)
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+
+        self.embedding = nn.Embedding(input_size, embedding_size)
+        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, dropout=p)
+        self.fc = nn.Linear(hidden_size, output_size)
+
+    def forward(self, x, hidden, cell):
+        # x shape: (N) where N is for batch size, we want it to be (1, N), seq_length
+        # is 1 here because we are sending in a single word and not a sentence
+        x = x.unsqueeze(0)
+
+        embedding = self.dropout(self.embedding(x))
+        # embedding shape: (1, N, embedding_size)
+
+        outputs, (hidden, cell) = self.rnn(embedding, (hidden, cell))
+        # outputs shape: (1, N, hidden_size)
+
+        predictions = self.fc(outputs)
+
+        # predictions shape: (1, N, length_target_vocabulary) to send it to
+        # loss function we want it to be (N, length_target_vocabulary) so we're
+        # just gonna remove the first dim
+        predictions = predictions.squeeze(0)
+
+        return predictions, hidden, cell
+
+
+class Seq2Seq(nn.Module):
+    def __init__(self, encoder, decoder, device):
+        super(Seq2Seq, self).__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.device = device
+
+    def forward(self, source, target, teacher_force_ratio=0.5):
+        batch_size = source.shape[1]
+        target_len = target.shape[0]
+        target_vocab_size = config.VOCAB_SIZE
+
+        outputs = torch.zeros(target_len, batch_size, target_vocab_size).to(self.device)
+
+        hidden, cell = self.encoder(source)
+
+        # Grab the first input to the Decoder which will be <SOS> token
+        x = target[0]
+
+        for t in range(1, target_len):
+            # Use previous hidden, cell as context from encoder at start
+            output, hidden, cell = self.decoder(x, hidden, cell)
+
+            # Store next output prediction
+            outputs[t] = output
+
+            # Get the best word the Decoder predicted (index in the vocabulary)
+            best_guess = output.argmax(1)
+
+            # With probability of teacher_force_ratio we take the actual next word
+            # otherwise we take the word that the Decoder predicted it to be.
+            # Teacher Forcing is used so that the model gets used to seeing
+            # similar inputs at training and testing time, if teacher forcing is 1
+            # then inputs at test time might be completely different than what the
+            # network is used to. This was a long comment.
+            x = target[t] if random.random() < teacher_force_ratio else best_guess
+
+        return outputs
 
 
 class Model(nn.Module):
@@ -41,10 +138,19 @@ def train(train_len, optimizer, model, criterion, epoch_loss, device, dataloader
         else:
             y, x = sample['category'].to(device), sample['10 words'].to(device)
 
-        output = model(x)
+        output = model(x, y)
+
+        output = output[1:].reshape(-1, output.shape[2])
+        y = y[1:].reshape(-1)
+
         loss = criterion(output, y)
         train_loss += loss.item()
         loss.backward()
+
+        # Clip to avoid exploding gradient issues, makes sure grads are
+        # within a healthy range
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
+
         epoch_loss.append(loss.item())
         optimizer.step()
         train_acc += (output.argmax(1) == y).sum().item()
@@ -101,7 +207,30 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
     plt.ion()  # interactive mode
 
     if model is None:
-        model = Model(config.VOCAB_SIZE, config.EMBED_DIM, num_classes, config.HIDDEN_DIM).to(device)
+        encoder_net = Encoder(
+            config.VOCAB_SIZE, config.EMBED_DIM, config.HIDDEN_DIM, config.NUM_LAYERS, config.ENC_DROPOUT
+        ).to(device)
+
+        if semi_supervised == config.SEMI_SUPERVISED_PHASE_1:
+            decoder_net = Decoder(
+                config.VOCAB_SIZE,
+                config.EMBED_DIM,
+                config.HIDDEN_DIM,
+                config.VOCAB_SIZE,
+                config.NUM_LAYERS,
+                config.DEC_DROPOUT,
+            ).to(device)
+        else:
+            decoder_net = Decoder(
+                config.VOCAB_SIZE,
+                config.EMBED_DIM,
+                config.HIDDEN_DIM,
+                config.SUPERVISED_NUM_CLASSES,
+                config.NUM_LAYERS,
+                config.DEC_DROPOUT,
+            ).to(device)
+
+        model = Seq2Seq(encoder_net, decoder_net, device).to(device)
 
     criterion = torch.nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.Adam(model.parameters())

@@ -21,12 +21,18 @@ def get_categories():
     id2cat = {}
     cat2id = {}
 
-    idx = 0
+    for boards in categories.values():
+        for board in boards:
+            categories_flat.append(board)
+
+    # Needs to be alphabetically sorted,
+    # because category_ids in make_dataset.py corresponds to target_names, which are sorted
+    categories_flat = sorted(categories_flat)
+
     for category_id, (category, boards) in enumerate(categories.items()):
         cat2id[category] = category_id
         for board in boards:
-            categories_flat.append(board)
+            idx = categories_flat.index(board)
             id2cat[idx] = category
-            idx += 1
 
     return id2cat, cat2id, categories_flat
