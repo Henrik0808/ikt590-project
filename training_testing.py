@@ -110,23 +110,6 @@ class Seq2Seq(nn.Module):
         return outputs
 
 
-class Model(nn.Module):
-    def __init__(self, vocab_size, embed_dim, num_class, hidden_dim):
-        super(Model, self).__init__()
-
-        self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
-        self.lstm = nn.LSTM(embed_dim, hidden_dim, batch_first=True)
-        self.fc = nn.Linear(hidden_dim, num_class)
-
-    def forward(self, x):
-        embedded = self.embedding(x)
-        _, (last_hidden_state, _) = self.lstm(embedded)
-        linear_input = last_hidden_state[-1]
-        out = self.fc(linear_input)
-
-        return out
-
-
 def train(train_len, optimizer, model, criterion, epoch_loss, device, dataloaders, semi_supervised=0):
     # Train the model
 
