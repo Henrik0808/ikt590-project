@@ -17,7 +17,7 @@ class Encoder(nn.Module):
         self.num_layers = num_layers
 
         self.embedding = nn.Embedding(input_size, embedding_size)
-        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, dropout=p)
+        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, batch_first=True, dropout=p)
 
     def forward(self, x):
         # x shape: (seq_length, N) where N is batch size
@@ -44,9 +44,10 @@ class Decoder(nn.Module):
         self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, dropout=p)
         self.fc = nn.Linear(hidden_size, output_size)
 
-    def forward(self, x, hidden, cell):
+    def forward(self, x, hidden, cell, device):
         # x shape: (N) where N is for batch size, we want it to be (1, N), seq_length
         # is 1 here because we are sending in a single word and not a sentence
+        x = torch.tensor([x for _ in range(hidden.shape[1])], dtype=torch.int64).to(device)
         x = x.unsqueeze(0)
 
         embedding = self.dropout(self.embedding(x))
@@ -72,21 +73,25 @@ class Seq2Seq(nn.Module):
         self.decoder = decoder
         self.device = device
 
-    def forward(self, source, target, teacher_force_ratio=0.5):
-        batch_size = source.shape[1]
-        target_len = target.shape[0]
-        target_vocab_size = config.VOCAB_SIZE
+    def forward(self, source, target, semi_supervised, teacher_force_ratio=0.5):
+        batch_size = source.shape[0]
+        target_len = 1
+
+        if semi_supervised == config.SEMI_SUPERVISED_PHASE_1:
+            target_vocab_size = config.VOCAB_SIZE
+        else:
+            target_vocab_size = config.SUPERVISED_NUM_CLASSES
 
         outputs = torch.zeros(target_len, batch_size, target_vocab_size).to(self.device)
 
         hidden, cell = self.encoder(source)
 
         # Grab the first input to the Decoder which will be <SOS> token
-        x = target[0]
+        x = config.SOS_TOKEN
 
-        for t in range(1, target_len):
+        for t in range(0, target_len):
             # Use previous hidden, cell as context from encoder at start
-            output, hidden, cell = self.decoder(x, hidden, cell)
+            output, hidden, cell = self.decoder(x, hidden, cell, self.device)
 
             # Store next output prediction
             outputs[t] = output
@@ -138,10 +143,16 @@ def train(train_len, optimizer, model, criterion, epoch_loss, device, dataloader
         else:
             y, x = sample['category'].to(device), sample['10 words'].to(device)
 
-        output = model(x, y)
+        output = model(x, y, semi_supervised)
 
-        output = output[1:].reshape(-1, output.shape[2])
-        y = y[1:].reshape(-1)
+        # Output is of shape (trg_len, batch_size, output_dim) but Cross Entropy Loss
+        # doesn't take input in that form. For example if we have MNIST we want to have
+        # output to be: (N, 10) and targets just (N). Here we can view it in a similar
+        # way that we have output_words * batch_size that we want to send in into
+        # our cost function, so we need to do some reshapin. While we're at it
+        # Let's also remove the start token while we're at it
+        output = output.reshape(-1, output.shape[2])
+        y = y.reshape(-1)
 
         loss = criterion(output, y)
         train_loss += loss.item()
@@ -173,7 +184,17 @@ def test(dataloader, data_len, batch_size, criterion, model, device, epoch_loss=
             y, x = sample['category'].to(device), sample['10 words'].to(device)
 
         with torch.no_grad():
-            output = model(x)
+            output = model(x, y, semi_supervised)
+
+            # Output is of shape (trg_len, batch_size, output_dim) but Cross Entropy Loss
+            # doesn't take input in that form. For example if we have MNIST we want to have
+            # output to be: (N, 10) and targets just (N). Here we can view it in a similar
+            # way that we have output_words * batch_size that we want to send in into
+            # our cost function, so we need to do some reshapin. While we're at it
+            # Let's also remove the start token while we're at it
+            output = output.reshape(-1, output.shape[2])
+            y = y.reshape(-1)
+
             loss = criterion(output, y)
             val_loss += loss.item()
             val_acc += (output.argmax(1) == y).sum().item()

@@ -74,6 +74,7 @@ if __name__ == '__main__':
                 # the 10 first words
                 X = words[head:tail]
                 X = ' '.join(X)
+                X = 'sos ' + X
                 # the 11th word
                 Y = words[tail]
 

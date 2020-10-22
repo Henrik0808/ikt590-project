@@ -32,6 +32,8 @@ DEC_DROPOUT = 0.5
 
 NUM_WORKERS = 0  # TODO: Fix bug where NUM_WORKERS >= 4 leads to WinError 1455
 
+SOS_TOKEN = None
+
 # Supervised (input: 10 words, output: category)
 SUPERVISED_NUM_CLASSES = len(categories)
 SUPERVISED_N_EPOCHS = 30

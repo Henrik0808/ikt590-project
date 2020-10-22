@@ -27,6 +27,7 @@ class WordsDataset(Dataset):
         tokenizer.fit_on_texts(' '.join(record) for record in records[:, 1:])
         # Adding 1 to vocabulary size because of additional reserved padding index 0
         config.VOCAB_SIZE = len(tokenizer.word_index) + 1
+        config.SOS_TOKEN = tokenizer.word_index['sos']
         return tokenizer
 
     @staticmethod
@@ -65,6 +66,8 @@ class WordsDataset(Dataset):
 
         if self.transform:
             return self.transform(sample)
+
+        sample['10 words'] = sample['10 words'][1:]
 
         return sample
 
@@ -123,7 +126,8 @@ def main():
                                                  config.SEMI_SUPERVISED_PHASE_1_N_EPOCHS)
 
     # Change last layer from classifying 11th word to categories
-    model_semi_supervised.fc = nn.Linear(config.HIDDEN_DIM, config.SEMI_SUPERVISED_PHASE_2_NUM_CLASSES).to(device)
+    model_semi_supervised.decoder.fc = nn.Linear(config.HIDDEN_DIM,
+                                                 config.SEMI_SUPERVISED_PHASE_2_NUM_CLASSES).to(device)
 
     # Semi-supervised phase 2 training/testing
     training_testing.run(device, dataset_sizes, dataloaders, config.SUPERVISED_NUM_CLASSES,
