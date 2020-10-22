@@ -1,5 +1,4 @@
 import argparse
-import os
 
 import config
 from utils import cwd

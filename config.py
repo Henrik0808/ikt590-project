@@ -29,10 +29,15 @@ HIDDEN_DIM = 512
 NUM_LAYERS = 2
 ENC_DROPOUT = 0.5
 DEC_DROPOUT = 0.5
+TEACHER_FORCE_RATIO = 0.5
 
 NUM_WORKERS = 0  # TODO: Fix bug where NUM_WORKERS >= 4 leads to WinError 1455
 
+# Needed when using an encoder-decoder model,
+# because the first 'word' input token to the decoder needs to be an sos (start of sequence) token
 SOS_TOKEN = None
+
+TARGET_LEN = 1
 
 # Supervised (input: 10 words, output: category)
 SUPERVISED_NUM_CLASSES = len(categories)

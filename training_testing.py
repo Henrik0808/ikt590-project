@@ -13,20 +13,18 @@ class Encoder(nn.Module):
     def __init__(self, input_size, embedding_size, hidden_size, num_layers, p):
         super(Encoder, self).__init__()
         self.dropout = nn.Dropout(p)
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
 
         self.embedding = nn.Embedding(input_size, embedding_size)
-        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, batch_first=True, dropout=p)
+        self.lstm = nn.LSTM(embedding_size, hidden_size, num_layers, batch_first=True, dropout=p)
 
     def forward(self, x):
-        # x shape: (seq_length, N) where N is batch size
+        # x shape: (seq_length, batch_size)
 
         embedding = self.dropout(self.embedding(x))
-        # embedding shape: (seq_length, N, embedding_size)
+        # embedding shape: (seq_length, batch_size, embedding_size)
 
-        outputs, (hidden, cell) = self.rnn(embedding)
-        # outputs shape: (seq_length, N, hidden_size)
+        outputs, (hidden, cell) = self.lstm(embedding)
+        # outputs shape: (seq_length, batch_size, hidden_size)
 
         return hidden, cell
 
@@ -37,30 +35,28 @@ class Decoder(nn.Module):
     ):
         super(Decoder, self).__init__()
         self.dropout = nn.Dropout(p)
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
 
         self.embedding = nn.Embedding(input_size, embedding_size)
-        self.rnn = nn.LSTM(embedding_size, hidden_size, num_layers, dropout=p)
+        self.lstm = nn.LSTM(embedding_size, hidden_size, num_layers, dropout=p)
         self.fc = nn.Linear(hidden_size, output_size)
 
     def forward(self, x, hidden, cell, device):
-        # x shape: (N) where N is for batch size, we want it to be (1, N), seq_length
-        # is 1 here because we are sending in a single word and not a sentence
+        # x shape: (batch_size), needs to be (1, batch_size).
+        # seq_length is 1 here because a single word is sent in and not a sentence
         x = torch.tensor([x for _ in range(hidden.shape[1])], dtype=torch.int64).to(device)
         x = x.unsqueeze(0)
 
         embedding = self.dropout(self.embedding(x))
-        # embedding shape: (1, N, embedding_size)
+        # embedding shape: (1, batch_size, embedding_size)
 
-        outputs, (hidden, cell) = self.rnn(embedding, (hidden, cell))
-        # outputs shape: (1, N, hidden_size)
+        outputs, (hidden, cell) = self.lstm(embedding, (hidden, cell))
+        # outputs shape: (1, batch_size, hidden_size)
 
         predictions = self.fc(outputs)
 
-        # predictions shape: (1, N, length_target_vocabulary) to send it to
-        # loss function we want it to be (N, length_target_vocabulary) so we're
-        # just gonna remove the first dim
+        # predictions shape: (1, batch_size, length_target_vocabulary). To send it to the
+        # loss function it needs to be (batch_size, length_target_vocabulary) so the first
+        # dim is going to be erased
         predictions = predictions.squeeze(0)
 
         return predictions, hidden, cell
@@ -69,13 +65,14 @@ class Decoder(nn.Module):
 class Seq2Seq(nn.Module):
     def __init__(self, encoder, decoder, device):
         super(Seq2Seq, self).__init__()
-        self.encoder = encoder
-        self.decoder = decoder
         self.device = device
 
-    def forward(self, source, target, semi_supervised, teacher_force_ratio=0.5):
+        self.encoder = encoder
+        self.decoder = decoder
+
+    def forward(self, source, target, semi_supervised, teacher_force_ratio=config.TEACHER_FORCE_RATIO):
         batch_size = source.shape[0]
-        target_len = 1
+        target_len = config.TARGET_LEN
 
         if semi_supervised == config.SEMI_SUPERVISED_PHASE_1:
             target_vocab_size = config.VOCAB_SIZE
@@ -86,7 +83,7 @@ class Seq2Seq(nn.Module):
 
         hidden, cell = self.encoder(source)
 
-        # Grab the first input to the Decoder which will be <SOS> token
+        # Get the first input to the decoder which is the sos token
         x = config.SOS_TOKEN
 
         for t in range(0, target_len):
@@ -96,18 +93,30 @@ class Seq2Seq(nn.Module):
             # Store next output prediction
             outputs[t] = output
 
-            # Get the best word the Decoder predicted (index in the vocabulary)
+            # Get the best word the decoder predicted (index in the vocabulary)
             best_guess = output.argmax(1)
 
-            # With probability of teacher_force_ratio we take the actual next word
-            # otherwise we take the word that the Decoder predicted it to be.
-            # Teacher Forcing is used so that the model gets used to seeing
-            # similar inputs at training and testing time, if teacher forcing is 1
-            # then inputs at test time might be completely different than what the
-            # network is used to. This was a long comment.
+            # With probability of teacher_force_ratio the actual next word is used
+            # otherwise the word that the decoder predicted it to be is used.
+            # Teacher Forcing is utilized so that the model gets accustomed to seeing
+            # similar inputs at training and testing time. If teacher forcing is 1
+            # then inputs at test time could be very different from what the
+            # network is accustomed to
             x = target[t] if random.random() < teacher_force_ratio else best_guess
 
         return outputs
+
+
+def reshape_output_and_y(output, y):
+    # Output is of shape (trg_len, batch_size, output_dim) but Cross Entropy Loss
+    # doesn't take input in that form. For example if MNIST is used we want to have
+    # output to be: (batch_size, 10) and targets just (batch_size). Here we can view it in a familiar
+    # way that we have output_words * batch_size that we want to send into
+    # our cost function, so some reshaping needs to be done
+    output = output.reshape(-1, output.shape[2])
+    y = y.reshape(-1)
+
+    return output, y
 
 
 def train(train_len, optimizer, model, criterion, epoch_loss, device, dataloaders, semi_supervised=0):
@@ -128,21 +137,14 @@ def train(train_len, optimizer, model, criterion, epoch_loss, device, dataloader
 
         output = model(x, y, semi_supervised)
 
-        # Output is of shape (trg_len, batch_size, output_dim) but Cross Entropy Loss
-        # doesn't take input in that form. For example if we have MNIST we want to have
-        # output to be: (N, 10) and targets just (N). Here we can view it in a similar
-        # way that we have output_words * batch_size that we want to send in into
-        # our cost function, so we need to do some reshapin. While we're at it
-        # Let's also remove the start token while we're at it
-        output = output.reshape(-1, output.shape[2])
-        y = y.reshape(-1)
+        output, y = reshape_output_and_y(output, y)
 
         loss = criterion(output, y)
         train_loss += loss.item()
         loss.backward()
 
-        # Clip to avoid exploding gradient issues, makes sure grads are
-        # within a healthy range
+        # Clip to avoid exploding gradient problems, makes sure grads are
+        # within an okay range
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
 
         epoch_loss.append(loss.item())
@@ -169,14 +171,7 @@ def test(dataloader, data_len, batch_size, criterion, model, device, epoch_loss=
         with torch.no_grad():
             output = model(x, y, semi_supervised)
 
-            # Output is of shape (trg_len, batch_size, output_dim) but Cross Entropy Loss
-            # doesn't take input in that form. For example if we have MNIST we want to have
-            # output to be: (N, 10) and targets just (N). Here we can view it in a similar
-            # way that we have output_words * batch_size that we want to send in into
-            # our cost function, so we need to do some reshapin. While we're at it
-            # Let's also remove the start token while we're at it
-            output = output.reshape(-1, output.shape[2])
-            y = y.reshape(-1)
+            output, y = reshape_output_and_y(output, y)
 
             loss = criterion(output, y)
             val_loss += loss.item()
@@ -215,24 +210,15 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
             config.VOCAB_SIZE, config.EMBED_DIM, config.HIDDEN_DIM, config.NUM_LAYERS, config.ENC_DROPOUT
         ).to(device)
 
-        if semi_supervised == config.SEMI_SUPERVISED_PHASE_1:
-            decoder_net = Decoder(
-                config.VOCAB_SIZE,
-                config.EMBED_DIM,
-                config.HIDDEN_DIM,
-                config.VOCAB_SIZE,
-                config.NUM_LAYERS,
-                config.DEC_DROPOUT,
-            ).to(device)
-        else:
-            decoder_net = Decoder(
-                config.VOCAB_SIZE,
-                config.EMBED_DIM,
-                config.HIDDEN_DIM,
-                config.SUPERVISED_NUM_CLASSES,
-                config.NUM_LAYERS,
-                config.DEC_DROPOUT,
-            ).to(device)
+        decoder_net = Decoder(
+            config.VOCAB_SIZE,
+            config.EMBED_DIM,
+            config.HIDDEN_DIM,
+            config.VOCAB_SIZE if semi_supervised == config.SEMI_SUPERVISED_PHASE_1
+            else config.SUPERVISED_NUM_CLASSES,
+            config.NUM_LAYERS,
+            config.DEC_DROPOUT,
+        ).to(device)
 
         model = Seq2Seq(encoder_net, decoder_net, device).to(device)
 

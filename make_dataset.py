@@ -74,6 +74,8 @@ if __name__ == '__main__':
                 # the 10 first words
                 X = words[head:tail]
                 X = ' '.join(X)
+                # Add a 'sos ' (start of sequence) word, which is needed when using an encoder-decoder model,
+                # before the start of the 10 word sentence
                 X = 'sos ' + X
                 # the 11th word
                 Y = words[tail]

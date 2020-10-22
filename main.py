@@ -27,6 +27,7 @@ class WordsDataset(Dataset):
         tokenizer.fit_on_texts(' '.join(record) for record in records[:, 1:])
         # Adding 1 to vocabulary size because of additional reserved padding index 0
         config.VOCAB_SIZE = len(tokenizer.word_index) + 1
+        # Get sos token, which is needed when using an encoder-decoder model
         config.SOS_TOKEN = tokenizer.word_index['sos']
         return tokenizer
 
@@ -67,6 +68,7 @@ class WordsDataset(Dataset):
         if self.transform:
             return self.transform(sample)
 
+        # Remove the sos token before the start of the 10 word sentence
         sample['10 words'] = sample['10 words'][1:]
 
         return sample
