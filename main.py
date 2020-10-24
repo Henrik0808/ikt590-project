@@ -25,8 +25,11 @@ class WordsDataset(Dataset):
         tokenizer = text.Tokenizer(oov_token=1, filters='')
         # Join 10 word sentence and 11th word by space
         tokenizer.fit_on_texts(' '.join(record) for record in records[:, 1:])
+        # Limit to words used at least twice
+        count_1 = sum(count == 1 for count in tokenizer.word_counts.values())
+        tokenizer.num_words = len(tokenizer.word_counts) - count_1
         # Adding 1 to vocabulary size because of additional reserved padding index 0
-        config.VOCAB_SIZE = len(tokenizer.word_index) + 1
+        config.VOCAB_SIZE = len(tokenizer.word_index) + 1 - count_1
         # Get sos token, which is needed when using an encoder-decoder model
         config.SOS_TOKEN = tokenizer.word_index['sos']
         return tokenizer
