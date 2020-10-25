@@ -12,10 +12,13 @@ import config
 class Encoder(nn.Module):
     def __init__(self, input_size, embedding_size, hidden_size, num_layers, p):
         super(Encoder, self).__init__()
-        self.dropout = nn.Dropout(p)
 
         self.embedding = nn.Embedding(input_size, embedding_size)
-        self.lstm = nn.LSTM(embedding_size, hidden_size, num_layers, batch_first=True, dropout=p)
+        self.lstm = nn.LSTM(embedding_size, hidden_size, num_layers, batch_first=True, bidirectional=True)
+
+        self.fc_hidden = nn.Linear(hidden_size * 2, hidden_size)
+        self.fc_cell = nn.Linear(hidden_size * 2, hidden_size)
+        self.dropout = nn.Dropout(p)
 
     def forward(self, x):
         # x shape: (seq_length, batch_size)
@@ -23,10 +26,17 @@ class Encoder(nn.Module):
         embedding = self.dropout(self.embedding(x))
         # embedding shape: (seq_length, batch_size, embedding_size)
 
-        outputs, (hidden, cell) = self.lstm(embedding)
-        # outputs shape: (seq_length, batch_size, hidden_size)
+        encoder_states, (hidden, cell) = self.lstm(embedding)
+        # encoder_states shape: (seq_length, batch_size, hidden_size)
 
-        return hidden, cell
+        # Use forward, backward cells and hidden through a linear layer
+        # so that it can be input to the decoder which is not bidirectional
+        # Also using index slicing ([idx:idx+1]) to keep the dimension
+        # hidden shape: (2, batch_size, hidden_size)
+        hidden = self.fc_hidden(torch.cat((hidden[0:1], hidden[1:2]), dim=2))
+        cell = self.fc_cell(torch.cat((cell[0:1], cell[1:2]), dim=2))
+
+        return encoder_states, hidden, cell
 
 
 class Decoder(nn.Module):
@@ -34,22 +44,49 @@ class Decoder(nn.Module):
         self, input_size, embedding_size, hidden_size, output_size, num_layers, p
     ):
         super(Decoder, self).__init__()
-        self.dropout = nn.Dropout(p)
 
         self.embedding = nn.Embedding(input_size, embedding_size)
-        self.lstm = nn.LSTM(embedding_size, hidden_size, num_layers, dropout=p)
-        self.fc = nn.Linear(hidden_size, output_size)
+        self.lstm = nn.LSTM(hidden_size * 2 + embedding_size, hidden_size, num_layers)
 
-    def forward(self, x, hidden, cell, device):
+        self.energy = nn.Linear(hidden_size * 3, 1)
+        self.fc = nn.Linear(hidden_size, output_size)
+        self.dropout = nn.Dropout(p)
+        self.softmax = nn.Softmax(dim=0)
+        self.relu = nn.ReLU()
+
+    def forward(self, x, encoder_states, hidden, cell, device):
         # x shape: (batch_size), needs to be (1, batch_size).
         # seq_length is 1 here because a single word is sent in and not a sentence
-        x = torch.tensor([x for _ in range(hidden.shape[1])], dtype=torch.int64).to(device)
+        # !!!remove? x = torch.tensor([x for _ in range(hidden.shape[1])], dtype=torch.int64).to(device)
+
         x = x.unsqueeze(0)
+        # x: (1, batch_size)
 
         embedding = self.dropout(self.embedding(x))
         # embedding shape: (1, batch_size, embedding_size)
 
-        outputs, (hidden, cell) = self.lstm(embedding, (hidden, cell))
+        sequence_length = encoder_states.shape[0]
+        h_reshaped = hidden.repeat(sequence_length, 1, 1)
+        # h_reshaped: (seq_length, batch_size, hidden_size * 2)
+
+        energy = self.relu(self.energy(torch.cat((h_reshaped, encoder_states), dim=2)))
+        # energy: (seq_length, batch_size, 1)
+
+        attention = self.softmax(energy)
+        # attention: (seq_length, batch_size, 1)
+
+        attention = attention.permute(1, 2, 0)
+        # attention shape: (batch_size, 1, seq_length)
+
+        encoder_states = encoder_states.permute(1, 0, 2)
+        # encoder_states shape: (batch_size, seq_length, hidden_size*2)
+
+        # (batch_size, 1, hidden_size*2) --> (1, batch_size, hidden_size*2)
+        context_vector = torch.bmm(attention, encoder_states).permute(1, 0, 2)
+
+        lstm_input = torch.cat((context_vector, embedding), dim=2)
+
+        outputs, (hidden, cell) = self.lstm(lstm_input, (hidden, cell))
         # outputs shape: (1, batch_size, hidden_size)
 
         predictions = self.fc(outputs)
@@ -81,14 +118,14 @@ class Seq2Seq(nn.Module):
 
         outputs = torch.zeros(target_len, batch_size, target_vocab_size).to(self.device)
 
-        hidden, cell = self.encoder(source)
+        encoder_states, hidden, cell = self.encoder(source)
 
         # Get the first input to the decoder which is the sos token
         x = config.SOS_TOKEN
 
         for t in range(0, target_len):
             # Use previous hidden, cell as context from encoder at start
-            output, hidden, cell = self.decoder(x, hidden, cell, self.device)
+            output, hidden, cell = self.decoder(x, encoder_states, hidden, cell, self.device)
 
             # Store next output prediction
             outputs[t] = output
