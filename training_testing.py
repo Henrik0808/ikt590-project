@@ -27,7 +27,7 @@ class Encoder(nn.Module):
         # embedding shape: (seq_length, batch_size, embedding_size)
 
         encoder_states, (hidden, cell) = self.lstm(embedding)
-        # encoder_states shape: (seq_length, batch_size, hidden_size)
+        # encoder_states shape: (seq_length, batch_size, hidden_size * 2)
 
         # Use forward, backward cells and hidden through a linear layer
         # so that it can be input to the decoder which is not bidirectional
@@ -67,7 +67,7 @@ class Decoder(nn.Module):
 
         sequence_length = encoder_states.shape[0]
         h_reshaped = hidden.repeat(sequence_length, 1, 1)
-        # h_reshaped: (seq_length, batch_size, hidden_size * 2)
+        # h_reshaped: (seq_length, batch_size, hidden_size)
 
         energy = self.relu(self.energy(torch.cat((h_reshaped, encoder_states), dim=2)))
         # energy: (seq_length, batch_size, 1)
@@ -86,7 +86,7 @@ class Decoder(nn.Module):
         # outputs shape: (1, batch_size, hidden_size)
 
         predictions = self.fc(outputs).squeeze(0)
-        # predictions: (batch_size, hidden_size)
+        # predictions: (batch_size, output_size)
 
         return predictions, hidden, cell
 
