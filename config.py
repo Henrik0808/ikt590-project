@@ -43,7 +43,7 @@ TARGET_LEN = 1
 
 # Supervised (input: 10 words, output: category)
 SUPERVISED_NUM_CLASSES = len(categories)
-SUPERVISED_N_EPOCHS = 0
+SUPERVISED_N_EPOCHS = 30
 
 # Semi-supervised phase 1 (input: 10 words, output: 11th word)
 SEMI_SUPERVISED_PHASE_1_N_EPOCHS = 30
