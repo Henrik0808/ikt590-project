@@ -14,7 +14,7 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
 
         self.embedding = nn.Embedding(input_size, embedding_size)
-        self.lstm = nn.LSTM(embedding_size, hidden_size, num_layers, batch_first=True, bidirectional=True)
+        self.lstm = nn.LSTM(embedding_size, hidden_size, num_layers, bidirectional=True)
 
         self.fc_hidden = nn.Linear(hidden_size * 2, hidden_size)
         self.fc_cell = nn.Linear(hidden_size * 2, hidden_size)
@@ -55,10 +55,10 @@ class Decoder(nn.Module):
         self.relu = nn.ReLU()
 
     def forward(self, x, encoder_states, hidden, cell, device):
+        x = torch.tensor([x for _ in range(hidden.shape[1])], dtype=torch.int64).to(device)
+
         # x shape: (batch_size), needs to be (1, batch_size).
         # seq_length is 1 here because a single word is sent in and not a sentence
-        # !!!remove? x = torch.tensor([x for _ in range(hidden.shape[1])], dtype=torch.int64).to(device)
-
         x = x.unsqueeze(0)
         # x: (1, batch_size)
 
@@ -73,28 +73,20 @@ class Decoder(nn.Module):
         # energy: (seq_length, batch_size, 1)
 
         attention = self.softmax(energy)
-        # attention: (seq_length, batch_size, 1)
 
-        attention = attention.permute(1, 2, 0)
-        # attention shape: (batch_size, 1, seq_length)
-
-        encoder_states = encoder_states.permute(1, 0, 2)
-        # encoder_states shape: (batch_size, seq_length, hidden_size*2)
-
-        # (batch_size, 1, hidden_size*2) --> (1, batch_size, hidden_size*2)
-        context_vector = torch.bmm(attention, encoder_states).permute(1, 0, 2)
+        # attention: (seq_length, batch_size, 1), snk
+        # encoder_states: (seq_length, batch_size, hidden_size*2), snl
+        # we want context_vector: (1, batch_size, hidden_size*2), i.e knl
+        context_vector = torch.einsum("snk,snl->knl", attention, encoder_states)
 
         lstm_input = torch.cat((context_vector, embedding), dim=2)
+        # lstm_input: (1, batch_size, hidden_size*2 + embedding_size)
 
         outputs, (hidden, cell) = self.lstm(lstm_input, (hidden, cell))
         # outputs shape: (1, batch_size, hidden_size)
 
-        predictions = self.fc(outputs)
-
-        # predictions shape: (1, batch_size, length_target_vocabulary). To send it to the
-        # loss function it needs to be (batch_size, length_target_vocabulary) so the first
-        # dim is going to be erased
-        predictions = predictions.squeeze(0)
+        predictions = self.fc(outputs).squeeze(0)
+        # predictions: (batch_size, hidden_size)
 
         return predictions, hidden, cell
 
@@ -108,7 +100,7 @@ class Seq2Seq(nn.Module):
         self.decoder = decoder
 
     def forward(self, source, target, semi_supervised, teacher_force_ratio=config.TEACHER_FORCE_RATIO):
-        batch_size = source.shape[0]
+        batch_size = source.shape[1]
         target_len = config.TARGET_LEN
 
         if semi_supervised == config.SEMI_SUPERVISED_PHASE_1:
@@ -156,6 +148,20 @@ def reshape_output_and_y(output, y):
     return output, y
 
 
+def get_x_y(semi_supervised, sample, device):
+    if semi_supervised == config.SEMI_SUPERVISED_PHASE_1:
+        x, y = sample['10 words'].to(device), sample['eleventh word'].to(device),
+    else:
+        x, y = sample['10 words'].to(device), sample['category'].to(device)
+
+    # Swapping dimensions of x to make it's shape correct for the LSTM without batch_first=True,
+    # which expects an input of shape (seq_length, batch_size, hidden_size)
+    x = x.transpose(1, 0)
+    # x shape: (seq_length, batch_size)
+
+    return x, y
+
+
 def train(train_len, optimizer, model, criterion, epoch_loss, device, dataloaders, semi_supervised=0):
     # Train the model
 
@@ -167,10 +173,7 @@ def train(train_len, optimizer, model, criterion, epoch_loss, device, dataloader
     for sample in data:
         optimizer.zero_grad()
 
-        if semi_supervised == config.SEMI_SUPERVISED_PHASE_1:
-            y, x = sample['eleventh word'].to(device), sample['10 words'].to(device)
-        else:
-            y, x = sample['category'].to(device), sample['10 words'].to(device)
+        x, y = get_x_y(semi_supervised, sample, device)
 
         output = model(x, y, semi_supervised)
 
@@ -200,10 +203,7 @@ def test(dataloader, data_len, batch_size, criterion, model, device, epoch_loss=
 
     for sample in dataloader:
 
-        if semi_supervised == config.SEMI_SUPERVISED_PHASE_1:
-            y, x = sample['eleventh word'].to(device), sample['10 words'].to(device)
-        else:
-            y, x = sample['category'].to(device), sample['10 words'].to(device)
+        x, y = get_x_y(semi_supervised, sample, device)
 
         with torch.no_grad():
             output = model(x, y, semi_supervised)
@@ -259,8 +259,8 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
 
         model = Seq2Seq(encoder_net, decoder_net, device).to(device)
 
-    criterion = torch.nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.Adam(model.parameters())
+    criterion = torch.nn.CrossEntropyLoss(ignore_index=config.PAD_IDX).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
 
     train_len = dataset_sizes[config.FILE_TRAINING]
 

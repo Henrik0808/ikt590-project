@@ -27,8 +27,9 @@ BATCH_SIZE = 512
 N_FEATURES = 10
 HIDDEN_DIM = 512
 NUM_LAYERS = 1
-ENC_DROPOUT = 0.5
-DEC_DROPOUT = 0.5
+ENC_DROPOUT = 0.0
+DEC_DROPOUT = 0.0
+LEARNING_RATE = 0.001
 TEACHER_FORCE_RATIO = 0.5
 
 NUM_WORKERS = 0  # TODO: Fix bug where NUM_WORKERS >= 4 leads to WinError 1455
@@ -36,12 +37,13 @@ NUM_WORKERS = 0  # TODO: Fix bug where NUM_WORKERS >= 4 leads to WinError 1455
 # Needed when using an encoder-decoder model,
 # because the first 'word' input token to the decoder needs to be an sos (start of sequence) token
 SOS_TOKEN = None
+PAD_IDX = 0
 
 TARGET_LEN = 1
 
 # Supervised (input: 10 words, output: category)
 SUPERVISED_NUM_CLASSES = len(categories)
-SUPERVISED_N_EPOCHS = 30
+SUPERVISED_N_EPOCHS = 0
 
 # Semi-supervised phase 1 (input: 10 words, output: 11th word)
 SEMI_SUPERVISED_PHASE_1_N_EPOCHS = 30
