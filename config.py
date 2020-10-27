@@ -10,8 +10,9 @@ FILE_VALIDATION = 'words_valid.csv'
 FILE_TESTING = 'words_test.csv'
 
 SUPERVISED = 0
-SEMI_SUPERVISED_PHASE_1 = 1
-SEMI_SUPERVISED_PHASE_2 = 2
+SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD = 1
+SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS = 2
+SEMI_SUPERVISED_PHASE_2 = 3
 
 categories = {
     'religion': {'soc.religion.christian'},
@@ -43,11 +44,11 @@ TARGET_LEN = 1
 
 # Supervised (input: 10 words, output: category)
 SUPERVISED_NUM_CLASSES = len(categories)
-SUPERVISED_N_EPOCHS = 30
+SUPERVISED_N_EPOCHS = 12
 
 # Semi-supervised phase 1 (input: 10 words, output: 11th word)
-SEMI_SUPERVISED_PHASE_1_N_EPOCHS = 30
+SEMI_SUPERVISED_PHASE_1_N_EPOCHS = 12
 
 # Semi-supervised phase 2 (input: 10 words, output: category)
 SEMI_SUPERVISED_PHASE_2_NUM_CLASSES = SUPERVISED_NUM_CLASSES
-SEMI_SUPERVISED_PHASE_2_N_EPOCHS = 30
+SEMI_SUPERVISED_PHASE_2_N_EPOCHS = 12

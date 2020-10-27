@@ -41,21 +41,27 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     def __init__(
-        self, input_size, embedding_size, hidden_size, output_size, num_layers, p
+            self, input_size, embedding_size, hidden_size, output_size, num_layers, p
     ):
         super(Decoder, self).__init__()
 
+        # Finding 11th word: Embedding(vocab_size, emb_size)
+        # Finding category: Embedding(vocab_size, emb_size)
+        # But, there are only 5 categories
+        # Index 0: padding first time
+        # Index 0: first category second time
         self.embedding = nn.Embedding(input_size, embedding_size)
         self.lstm = nn.LSTM(hidden_size * 2 + embedding_size, hidden_size, num_layers)
 
         self.energy = nn.Linear(hidden_size * 3, 1)
-        self.fc = nn.Linear(hidden_size, output_size)
+        self.fc = nn.Linear(hidden_size, output_size)  # Changed from finding 11th word to category
         self.dropout = nn.Dropout(p)
         self.softmax = nn.Softmax(dim=0)
         self.relu = nn.ReLU()
 
     def forward(self, x, encoder_states, hidden, cell, device):
-        x = torch.tensor([x for _ in range(hidden.shape[1])], dtype=torch.int64).to(device)
+        if isinstance(x, int):
+            x = torch.tensor([x for _ in range(hidden.shape[1])], dtype=torch.int64).to(device)
 
         # x shape: (batch_size), needs to be (1, batch_size).
         # seq_length is 1 here because a single word is sent in and not a sentence
@@ -101,10 +107,16 @@ class Seq2Seq(nn.Module):
 
     def forward(self, source, target, semi_supervised, teacher_force_ratio=config.TEACHER_FORCE_RATIO):
         batch_size = source.shape[1]
-        target_len = config.TARGET_LEN
 
-        if semi_supervised == config.SEMI_SUPERVISED_PHASE_1:
+        if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
+            target_len = config.N_FEATURES
+        else:
+            target_len = config.TARGET_LEN
+
+        if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:
             target_vocab_size = config.VOCAB_SIZE
+        elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
+            target_vocab_size = config.N_FEATURES
         else:
             target_vocab_size = config.SUPERVISED_NUM_CLASSES
 
@@ -113,7 +125,12 @@ class Seq2Seq(nn.Module):
         encoder_states, hidden, cell = self.encoder(source)
 
         # Get the first input to the decoder which is the sos token
-        x = config.SOS_TOKEN
+        if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
+            x = config.N_FEATURES
+        elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:
+            x = config.SOS_TOKEN
+        else:
+            x = config.SUPERVISED_NUM_CLASSES
 
         for t in range(0, target_len):
             # Use previous hidden, cell as context from encoder at start
@@ -131,7 +148,9 @@ class Seq2Seq(nn.Module):
             # similar inputs at training and testing time. If teacher forcing is 1
             # then inputs at test time could be very different from what the
             # network is accustomed to
-            x = target[t] if random.random() < teacher_force_ratio else best_guess
+
+            if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
+                x = target[t] if random.random() < teacher_force_ratio else best_guess
 
         return outputs
 
@@ -149,8 +168,11 @@ def reshape_output_and_y(output, y):
 
 
 def get_x_y(semi_supervised, sample, device):
-    if semi_supervised == config.SEMI_SUPERVISED_PHASE_1:
-        x, y = sample['10 words'].to(device), sample['eleventh word'].to(device),
+    if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:
+        x, y = sample['10 words'].to(device), sample['eleventh word'].to(device)
+    elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
+        x, y = sample['10 words shuffled'].to(device), sample['10 words shuffled to sentence indexes'].to(device)
+        y = y.transpose(1, 0)
     else:
         x, y = sample['10 words'].to(device), sample['category'].to(device)
 
@@ -229,10 +251,12 @@ def my_plot(epochs, loss_train, loss_val, semi_supervised=0):
     plt.ylabel('Loss')
     plt.xlabel('Epoch')
 
-    if semi_supervised == 0:  # Supervised
+    if semi_supervised == config.SUPERVISED:  # Supervised
         plt.savefig('outputs/graphs/supervised_training/loss_graph.png')
-    elif semi_supervised == 1:  # Semi-supervised phase 1
-        plt.savefig('outputs/graphs/semi_supervised_training/phase_one/loss_graph.png')
+    elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:  # Semi-supervised phase 1 eleventh word
+        plt.savefig('outputs/graphs/semi_supervised_training/phase_one/eleventh_word/loss_graph.png')
+    elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:  # Semi-supervised phase 1 shuffled words
+        plt.savefig('outputs/graphs/semi_supervised_training/phase_one/shuffled_words/loss_graph.png')
     else:  # Semi-supervised phase 2
         plt.savefig('outputs/graphs/semi_supervised_training/phase_two/loss_graph.png')
 
@@ -248,11 +272,14 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
         ).to(device)
 
         decoder_net = Decoder(
-            config.VOCAB_SIZE,
+            config.VOCAB_SIZE if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD
+            else (config.N_FEATURES + 1 if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS
+                  else config.SUPERVISED_NUM_CLASSES + 1),
             config.EMBED_DIM,
             config.HIDDEN_DIM,
-            config.VOCAB_SIZE if semi_supervised == config.SEMI_SUPERVISED_PHASE_1
-            else config.SUPERVISED_NUM_CLASSES,
+            config.VOCAB_SIZE if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD
+            else (config.N_FEATURES if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS
+                  else config.SUPERVISED_NUM_CLASSES),
             config.NUM_LAYERS,
             config.DEC_DROPOUT,
         ).to(device)
@@ -262,15 +289,20 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
     criterion = torch.nn.CrossEntropyLoss(ignore_index=config.PAD_IDX).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
 
-    train_len = dataset_sizes[config.FILE_TRAINING]
+    if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
+        train_len = dataset_sizes[config.FILE_TRAINING] * config.N_FEATURES
+    else:
+        train_len = dataset_sizes[config.FILE_TRAINING]
 
     loss_vals_train = []
     loss_vals_val = []
 
-    if not semi_supervised:
+    if semi_supervised == config.SUPERVISED:
         print("Supervised training:\n")
-    elif semi_supervised == 1:
-        print("\nSemi-supervised phase 1 training:\n")
+    elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:
+        print("\nSemi-supervised phase 1 eleventh word training:\n")
+    elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
+        print("\nSemi-supervised phase 1 shuffled words training:\n")
     else:
         print("\nSemi-supervised phase 2 training:\n")
 
@@ -285,7 +317,10 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
 
         loss_vals_train.append(sum(epoch_loss_train) / len(epoch_loss_train))
 
-        valid_loss, valid_acc = test(dataloaders[config.FILE_VALIDATION], dataset_sizes[config.FILE_VALIDATION],
+        valid_loss, valid_acc = test(dataloaders[config.FILE_VALIDATION],
+                                     dataset_sizes[config.FILE_VALIDATION] * config.N_FEATURES
+                                     if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS
+                                     else dataset_sizes[config.FILE_VALIDATION],
                                      config.BATCH_SIZE,
                                      criterion, model, device, epoch_loss_val,
                                      semi_supervised=semi_supervised)
@@ -302,7 +337,10 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
 
         print('Checking the results of test dataset...')
 
-        test_loss, test_acc = test(dataloaders[config.FILE_TESTING], dataset_sizes[config.FILE_TESTING],
+        test_loss, test_acc = test(dataloaders[config.FILE_TESTING],
+                                   dataset_sizes[config.FILE_TESTING] * config.N_FEATURES
+                                   if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS
+                                   else dataset_sizes[config.FILE_TESTING],
                                    config.BATCH_SIZE,
                                    criterion, model, device,
                                    semi_supervised=semi_supervised)
@@ -313,5 +351,6 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
             loss_vals_val, semi_supervised)
 
     # Model from semi-supervised phase 1 is trained further in semi-supervised phase 2
-    if semi_supervised == config.SEMI_SUPERVISED_PHASE_1:
+    if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD or \
+            semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
         return model

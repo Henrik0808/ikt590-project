@@ -8,6 +8,17 @@ import config
 import utils
 from utils import get_categories
 
+
+def shuffled_words_to_sentence_indexes(words_shuffled, words):
+    sentence_indexes = []
+
+    for word in words_shuffled:
+        sentence_idx = words.index(word)
+        sentence_indexes.append(str(sentence_idx))
+
+    return sentence_indexes
+
+
 if __name__ == '__main__':
     id2cat, cat2id, categories_flat = get_categories()
     print('Working on', len(cat2id), 'categories;',
@@ -73,14 +84,20 @@ if __name__ == '__main__':
 
                 # the 10 first words
                 X = words[head:tail]
+                X_shuffled = X[:]
+                # X_shuffled: X (10 words) shuffled
+                random.shuffle(X_shuffled)
+                X_shuffled_to_sentence_indexes = shuffled_words_to_sentence_indexes(X_shuffled, X)
+                X_shuffled_to_sentence_indexes = ' '.join(X_shuffled_to_sentence_indexes)
                 X = ' '.join(X)
+                X_shuffled = ' '.join(X_shuffled)
                 # Add a 'sos ' (start of sequence) word, which is needed when using an encoder-decoder model,
                 # before the start of the 10 word sentence
                 X = 'sos ' + X
                 # the 11th word
                 Y = words[tail]
 
-                records.append((id2cat[category_id], X, Y))
+                records.append((id2cat[category_id], X, Y, X_shuffled, str(X_shuffled_to_sentence_indexes)))
                 metrics[id2cat[category_id]] += 1
 
     # Metrics

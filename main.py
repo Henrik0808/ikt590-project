@@ -81,19 +81,23 @@ class WordsDataset(Dataset):
         _, cat2id, _ = utils.get_categories()
 
         tokenized = np.asarray(self.__class__.tokenizer.texts_to_sequences(
-            ' '.join(record) for record in records[:, 1:]
+            ' '.join(record) for record in records[:, 1:-1]
         ), dtype=np.int64)
 
         return {
             'category': [cat2id[record] for record in records[:, 0]],
-            '10 words': tokenized[:, :-1],
-            'eleventh word': tokenized[:, -1],
+            '10 words': tokenized[:, :11],
+            'eleventh word': tokenized[:, 11],
+            '10 words shuffled': tokenized[:, 12:],
+            '10 words shuffled to sentence indexes':
+                np.asarray([list(map(int, record.split(' '))) for record in records[:, -1]], dtype=np.int64)
         }
 
 
 def main():
     pathlib.Path('outputs/graphs/supervised_training').mkdir(parents=True, exist_ok=True)
-    pathlib.Path('outputs/graphs/semi_supervised_training/phase_one').mkdir(parents=True, exist_ok=True)
+    pathlib.Path('outputs/graphs/semi_supervised_training/phase_one/eleventh_word').mkdir(parents=True, exist_ok=True)
+    pathlib.Path('outputs/graphs/semi_supervised_training/phase_one/shuffled_words').mkdir(parents=True, exist_ok=True)
     pathlib.Path('outputs/graphs/semi_supervised_training/phase_two').mkdir(parents=True, exist_ok=True)
 
     # Create WordsDatasets for training, validation and testing
@@ -128,7 +132,7 @@ def main():
 
     # Semi-supervised phase 1 training/testing
     model_semi_supervised = training_testing.run(device, dataset_sizes, dataloaders, config.VOCAB_SIZE,
-                                                 config.SEMI_SUPERVISED_PHASE_1,
+                                                 config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS,
                                                  config.SEMI_SUPERVISED_PHASE_1_N_EPOCHS)
 
     # Change last layer from classifying 11th word to categories
