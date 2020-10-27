@@ -297,6 +297,18 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
     else:
         print("\nSemi-supervised phase 2 training:\n")
 
+    # Load checkpoint, if one exists
+    try:
+        data = torch.load(f'outputs/checkpoints/checkpoint_{semi_supervised}.tar')
+    except OSError:
+        print(f'No checkpoint for {semi_supervised}')
+    else:
+        print(f'Using checkpoint for {semi_supervised}')
+        model.load_state_dict(data)
+        return model
+
+    best_loss, best_model = float('inf'), None
+
     for epoch in range(num_epochs):
         start_time = time.time()
 
@@ -317,6 +329,10 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
                                      semi_supervised=semi_supervised)
 
         loss_vals_val.append(sum(epoch_loss_val) / len(epoch_loss_val))
+        
+        # Save model as the best model if the loss is lower
+        if valid_loss < best_loss:
+            best_model = model        
 
         secs = int(time.time() - start_time)
         mins = secs / 60
@@ -338,10 +354,13 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
 
         print(f'\tLoss: {test_loss.item():.4f}(test)\t|\tAcc: {test_acc.item() * 100:.1f}%(test)')
 
+    # Save best model to disk
+    torch.save(best_model.state_dict(), f'outputs/checkpoints/checkpoint_{semi_supervised}.tar')
+
     my_plot(np.linspace(1, num_epochs, num_epochs).astype(int), loss_vals_train,
             loss_vals_val, semi_supervised)
 
     # Model from semi-supervised phase 1 is trained further in semi-supervised phase 2
     if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD or \
             semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
-        return model
+        return best_model
