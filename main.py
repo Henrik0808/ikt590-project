@@ -64,9 +64,6 @@ class WordsDataset(Dataset):
         return self.len
 
     def __getitem__(self, idx):
-        if torch.is_tensor(idx):  # ??? -- is this in use?
-            idx = idx.tolist()
-
         sample = {k: v[idx] for k, v in self.records_tokenized.items()}
 
         if self.transform:
@@ -116,8 +113,9 @@ def main():
     # Run program on GPU if available, else run on CPU
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Uncomment the line below to force running on CPU
-    # device = 'cpu'
+    if config.FORCE_CPU:
+        # Force running on CPU
+        device = 'cpu'
 
     if device.type == 'cuda':
         print('[*] Using the GPU:', torch.cuda.get_device_name(device))

@@ -11,9 +11,30 @@ from utils import get_categories
 
 def shuffled_words_to_sentence_indexes(words_shuffled, words):
     sentence_indexes = []
+    unique_words_sentence_indexes = {}
 
+    # Create a dictionary containing unique words with their corresponding correctly ordered sentence indexes
+    for idx, word in enumerate(words):
+        if word not in unique_words_sentence_indexes:
+            unique_words_sentence_indexes[word] = []
+
+        unique_words_sentence_indexes[word].append(idx)
+
+    # For every word in shuffled sentence, get corresponding correct 'sentence index',
+    # saying which 'index' in the correctly ordered sentence the word belongs.
+    # For example:
+    # Shuffled sentence (words_shuffled): 'sentence is a this'
+    # Correctly ordered sentence (words): 'this is a sentence'
+    # -> sentence_indexes = [3, 1, 2, 0],
+    # which means that the first word in the shuffled sentence ('sentence'),
+    # belongs in 'index' 3 in the correctly ordered sentence.
+    # The second word ('is') belongs in 'index' 1, and so on
     for word in words_shuffled:
-        sentence_idx = words.index(word)
+        sentence_idx = unique_words_sentence_indexes[word][0]
+
+        if len(unique_words_sentence_indexes[word]) > 1:
+            unique_words_sentence_indexes[word].pop(0)
+
         sentence_indexes.append(str(sentence_idx))
 
     return sentence_indexes

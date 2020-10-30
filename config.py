@@ -39,17 +39,20 @@ NUM_WORKERS = 0  # TODO: Fix bug where NUM_WORKERS >= 4 leads to WinError 1455
 # because the first 'word' input token to the decoder needs to be an sos (start of sequence) token
 SOS_TOKEN_ELEVENTH = 0
 SOS_TOKEN_SHUFFLED = N_FEATURES
+
 PAD_IDX = 0
 
 TARGET_LEN = 1
 
+FORCE_CPU = False
+
 # Supervised (input: 10 words, output: category)
 SUPERVISED_NUM_CLASSES = len(categories)
-SUPERVISED_N_EPOCHS = 2
+SUPERVISED_N_EPOCHS = 30
 
 # Semi-supervised phase 1 (input: 10 words, output: 11th word)
-SEMI_SUPERVISED_PHASE_1_N_EPOCHS = 2
+SEMI_SUPERVISED_PHASE_1_N_EPOCHS = 30
 
 # Semi-supervised phase 2 (input: 10 words, output: category)
 SEMI_SUPERVISED_PHASE_2_NUM_CLASSES = SUPERVISED_NUM_CLASSES
-SEMI_SUPERVISED_PHASE_2_N_EPOCHS = 2
+SEMI_SUPERVISED_PHASE_2_N_EPOCHS = 30
