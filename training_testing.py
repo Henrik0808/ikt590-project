@@ -45,16 +45,11 @@ class Decoder(nn.Module):
     ):
         super(Decoder, self).__init__()
 
-        # Finding 11th word: Embedding(vocab_size, emb_size)
-        # Finding category: Embedding(vocab_size, emb_size)
-        # But, there are only 5 categories
-        # Index 0: padding first time
-        # Index 0: first category second time
         self.embedding = nn.Embedding(input_size, embedding_size)
         self.lstm = nn.LSTM(hidden_size * 2 + embedding_size, hidden_size, num_layers)
 
         self.energy = nn.Linear(hidden_size * 3, 1)
-        self.fc = nn.Linear(hidden_size, output_size)  # Changed from finding 11th word to category
+        self.fc = nn.Linear(hidden_size, output_size)
         self.dropout = nn.Dropout(p)
         self.softmax = nn.Softmax(dim=0)
         self.relu = nn.ReLU()
@@ -125,12 +120,10 @@ class Seq2Seq(nn.Module):
         encoder_states, hidden, cell = self.encoder(source)
 
         # Get the first input to the decoder which is the sos token
-        if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
-            x = config.N_FEATURES
-        elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:
-            x = config.SOS_TOKEN
+        if self.decoder.embedding.num_embeddings == 1:
+            x = config.SOS_TOKEN_ELEVENTH
         else:
-            x = config.SUPERVISED_NUM_CLASSES
+            x = config.SOS_TOKEN_SHUFFLED
 
         for t in range(0, target_len):
             # Use previous hidden, cell as context from encoder at start
@@ -142,14 +135,13 @@ class Seq2Seq(nn.Module):
             # Get the best word the decoder predicted (index in the vocabulary)
             best_guess = output.argmax(1)
 
-            # With probability of teacher_force_ratio the actual next word is used
-            # otherwise the word that the decoder predicted it to be is used.
-            # Teacher Forcing is utilized so that the model gets accustomed to seeing
-            # similar inputs at training and testing time. If teacher forcing is 1
-            # then inputs at test time could be very different from what the
-            # network is accustomed to
-
             if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
+                # With probability of teacher_force_ratio the actual next word is used
+                # otherwise the word that the decoder predicted it to be is used.
+                # Teacher Forcing is utilized so that the model gets accustomed to seeing
+                # similar inputs at training and testing time. If teacher forcing is 1
+                # then inputs at test time could be very different from what the
+                # network is accustomed to
                 x = target[t] if random.random() < teacher_force_ratio else best_guess
 
         return outputs
@@ -272,9 +264,8 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
         ).to(device)
 
         decoder_net = Decoder(
-            config.VOCAB_SIZE if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD
-            else (config.N_FEATURES + 1 if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS
-                  else config.SUPERVISED_NUM_CLASSES + 1),
+            config.N_FEATURES + 1 if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS
+            else 1,
             config.EMBED_DIM,
             config.HIDDEN_DIM,
             config.VOCAB_SIZE if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD
@@ -286,7 +277,7 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
 
         model = Seq2Seq(encoder_net, decoder_net, device).to(device)
 
-    criterion = torch.nn.CrossEntropyLoss(ignore_index=config.PAD_IDX).to(device)
+    criterion = torch.nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
 
     if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
