@@ -4,6 +4,8 @@ TEST_RATIO = 0.1
 SIZE_OF_DATASET = 375_000
 
 DATA_DIR = 'data/'
+OUTPUTS_DIR = 'outputs/'
+CHECKPOINTS_DIR = OUTPUTS_DIR + 'checkpoints/'
 
 FILE_TRAINING = 'words_train.csv'
 FILE_VALIDATION = 'words_valid.csv'
@@ -45,6 +47,9 @@ PAD_IDX = 0
 TARGET_LEN = 1
 
 FORCE_CPU = False
+
+LOAD_MODEL = True
+SAVE_MODEL = True
 
 # Supervised (input: 10 words, output: category)
 SUPERVISED_NUM_CLASSES = len(categories)

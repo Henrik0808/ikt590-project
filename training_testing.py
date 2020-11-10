@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import random
+import os
 
 import config
 
@@ -14,10 +15,9 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
 
         self.embedding = nn.Embedding(input_size, embedding_size)
-        self.lstm = nn.LSTM(embedding_size, hidden_size, num_layers, bidirectional=True)
+        self.gru = nn.GRU(embedding_size, hidden_size, num_layers, bidirectional=True)
 
         self.fc_hidden = nn.Linear(hidden_size * 2, hidden_size)
-        self.fc_cell = nn.Linear(hidden_size * 2, hidden_size)
         self.dropout = nn.Dropout(p)
 
     def forward(self, x):
@@ -26,17 +26,16 @@ class Encoder(nn.Module):
         embedding = self.dropout(self.embedding(x))
         # embedding shape: (seq_length, batch_size, embedding_size)
 
-        encoder_states, (hidden, cell) = self.lstm(embedding)
+        encoder_states, hidden = self.gru(embedding)
         # encoder_states shape: (seq_length, batch_size, hidden_size * 2)
 
-        # Use forward, backward cells and hidden through a linear layer
+        # Use forward, backward hidden through a linear layer
         # so that it can be input to the decoder which is not bidirectional
         # Also using index slicing ([idx:idx+1]) to keep the dimension
         # hidden shape: (2, batch_size, hidden_size)
         hidden = self.fc_hidden(torch.cat((hidden[0:1], hidden[1:2]), dim=2))
-        cell = self.fc_cell(torch.cat((cell[0:1], cell[1:2]), dim=2))
 
-        return encoder_states, hidden, cell
+        return encoder_states, hidden
 
 
 class Decoder(nn.Module):
@@ -46,7 +45,7 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
 
         self.embedding = nn.Embedding(input_size, embedding_size)
-        self.lstm = nn.LSTM(hidden_size * 2 + embedding_size, hidden_size, num_layers)
+        self.gru = nn.GRU(hidden_size * 2 + embedding_size, hidden_size, num_layers)
 
         self.energy = nn.Linear(hidden_size * 3, 1)
         self.fc = nn.Linear(hidden_size, output_size)
@@ -54,7 +53,7 @@ class Decoder(nn.Module):
         self.softmax = nn.Softmax(dim=0)
         self.relu = nn.ReLU()
 
-    def forward(self, x, encoder_states, hidden, cell, device):
+    def forward(self, x, encoder_states, hidden, device):
         if isinstance(x, int):
             x = torch.tensor([x for _ in range(hidden.shape[1])], dtype=torch.int64).to(device)
 
@@ -80,16 +79,16 @@ class Decoder(nn.Module):
         # we want context_vector: (1, batch_size, hidden_size*2), i.e knl
         context_vector = torch.einsum("snk,snl->knl", attention, encoder_states)
 
-        lstm_input = torch.cat((context_vector, embedding), dim=2)
-        # lstm_input: (1, batch_size, hidden_size*2 + embedding_size)
+        gru_input = torch.cat((context_vector, embedding), dim=2)
+        # gru_input: (1, batch_size, hidden_size*2 + embedding_size)
 
-        outputs, (hidden, cell) = self.lstm(lstm_input, (hidden, cell))
+        outputs, hidden = self.gru(gru_input, hidden)
         # outputs shape: (1, batch_size, hidden_size)
 
         predictions = self.fc(outputs).squeeze(0)
         # predictions: (batch_size, output_size)
 
-        return predictions, hidden, cell
+        return predictions, hidden
 
 
 class Seq2Seq(nn.Module):
@@ -117,7 +116,7 @@ class Seq2Seq(nn.Module):
 
         outputs = torch.zeros(target_len, batch_size, target_vocab_size).to(self.device)
 
-        encoder_states, hidden, cell = self.encoder(source)
+        encoder_states, hidden = self.encoder(source)
 
         # Get the first input to the decoder which is the sos token
         if self.decoder.embedding.num_embeddings == 1:
@@ -127,7 +126,7 @@ class Seq2Seq(nn.Module):
 
         for t in range(0, target_len):
             # Use previous hidden, cell as context from encoder at start
-            output, hidden, cell = self.decoder(x, encoder_states, hidden, cell, self.device)
+            output, hidden = self.decoder(x, encoder_states, hidden, self.device)
 
             # Store next output prediction
             outputs[t] = output
@@ -159,16 +158,16 @@ def reshape_output_and_y(output, y):
     return output, y
 
 
-def get_x_y(semi_supervised, sample, device):
+def get_x_y(semi_supervised, batch, device):
     if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:
-        x, y = sample['10 words'].to(device), sample['eleventh word'].to(device)
+        x, y = batch['10 words'].to(device), batch['eleventh word'].to(device)
     elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
-        x, y = sample['10 words shuffled'].to(device), sample['10 words shuffled to sentence indexes'].to(device)
+        x, y = batch['10 words shuffled'].to(device), batch['10 words shuffled to sentence indexes'].to(device)
         y = y.transpose(1, 0)
     else:
-        x, y = sample['10 words'].to(device), sample['category'].to(device)
+        x, y = batch['10 words'].to(device), batch['category'].to(device)
 
-    # Swapping dimensions of x to make it's shape correct for the LSTM without batch_first=True,
+    # Swapping dimensions of x to make it's shape correct for the GRU without batch_first=True,
     # which expects an input of shape (seq_length, batch_size, hidden_size)
     x = x.transpose(1, 0)
     # x shape: (seq_length, batch_size)
@@ -176,62 +175,64 @@ def get_x_y(semi_supervised, sample, device):
     return x, y
 
 
-def train(train_len, optimizer, model, criterion, epoch_loss, device, dataloaders, semi_supervised=0):
+def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supervised=0):
     # Train the model
 
-    train_loss = torch.zeros(1, dtype=torch.float).to(device)
+    total_loss = torch.zeros(1, dtype=torch.float).to(device)
     train_acc = torch.zeros(1, dtype=torch.float).to(device)
 
     data = dataloaders[config.FILE_TRAINING]
 
-    for sample in data:
+    # Get number of batches
+    n_batches = len(data)
+
+    for batch in data:
         optimizer.zero_grad()
 
-        x, y = get_x_y(semi_supervised, sample, device)
+        x, y = get_x_y(semi_supervised, batch, device)
 
         output = model(x, y, semi_supervised)
 
         output, y = reshape_output_and_y(output, y)
 
-        loss = criterion(output, y)
-        train_loss += loss.item()
-        loss.backward()
+        batch_loss = criterion(output, y)
+        total_loss += batch_loss.item()
+        batch_loss.backward()
 
         # Clip to avoid exploding gradient problems, makes sure grads are
         # within an okay range
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
 
-        epoch_loss.append(loss.item())
         optimizer.step()
         train_acc += (output.argmax(1) == y).sum().item()
 
-    return train_loss / train_len, train_acc / train_len
+    return total_loss / n_batches, train_acc / train_len
 
 
-def test(dataloader, data_len, batch_size, criterion, model, device, epoch_loss=None,
+def test(dataloader, data_len, batch_size, criterion, model, device,
          semi_supervised=config.SUPERVISED):
     # Test the model
 
-    val_loss = torch.zeros(1, dtype=torch.float).to(device)
+    total_loss = torch.zeros(1, dtype=torch.float).to(device)
     val_acc = torch.zeros(1, dtype=torch.float).to(device)
 
-    for sample in dataloader:
+    # Get number of batches
+    n_batches = len(dataloader)
 
-        x, y = get_x_y(semi_supervised, sample, device)
+    for batch in dataloader:
+
+        x, y = get_x_y(semi_supervised, batch, device)
 
         with torch.no_grad():
             output = model(x, y, semi_supervised)
 
             output, y = reshape_output_and_y(output, y)
 
-            loss = criterion(output, y)
-            val_loss += loss.item()
+            batch_loss = criterion(output, y)
+            total_loss += batch_loss.item()
             val_acc += (output.argmax(1) == y).sum().item()
 
-            if epoch_loss is not None:
-                epoch_loss.append(loss.item())
-
-    return val_loss / data_len, val_acc / data_len
+    return total_loss / n_batches, val_acc / data_len
 
 
 def my_plot(epochs, loss_train, loss_val, semi_supervised=0):
@@ -285,9 +286,6 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
     else:
         train_len = dataset_sizes[config.FILE_TRAINING]
 
-    loss_vals_train = []
-    loss_vals_val = []
-
     if semi_supervised == config.SUPERVISED:
         print("Supervised training:\n")
     elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:
@@ -297,42 +295,52 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
     else:
         print("\nSemi-supervised phase 2 training:\n")
 
-    # Load checkpoint, if one exists
-    try:
-        data = torch.load(f'outputs/checkpoints/checkpoint_{semi_supervised}.tar')
-    except OSError:
-        print(f'No checkpoint for {semi_supervised}')
-    else:
-        print(f'Using checkpoint for {semi_supervised}')
-        model.load_state_dict(data)
-        return model
+    if config.LOAD_MODEL:
+        # Load checkpoint, if one exists
+        for filename in os.listdir(config.CHECKPOINTS_DIR):
+            root, ext = os.path.splitext(filename)
 
-    best_loss, best_model = float('inf'), None
+            if root.startswith(f'checkpoint_{semi_supervised}') and ext == '.tar':
+                data = torch.load(config.CHECKPOINTS_DIR + filename)
+                print(f'Using checkpoint for {semi_supervised}')
+                model.load_state_dict(data)
+                return model
+
+        print(f'No checkpoint for {semi_supervised}')
+
+    training_loss = []
+    validation_loss = []
+
+    best_loss, best_acc, best_model = float('inf'), 0, None
+    best_epoch_loss, best_epoch_acc = 0, 0
 
     for epoch in range(num_epochs):
         start_time = time.time()
 
-        epoch_loss_train = []
-        epoch_loss_val = []
-
-        train_loss, train_acc = train(train_len, optimizer, model, criterion, epoch_loss_train, device,
+        train_loss, train_acc = train(train_len, optimizer, model, criterion, device,
                                       dataloaders, semi_supervised=semi_supervised)
 
-        loss_vals_train.append(sum(epoch_loss_train) / len(epoch_loss_train))
+        training_loss.append(train_loss)
 
         valid_loss, valid_acc = test(dataloaders[config.FILE_VALIDATION],
                                      dataset_sizes[config.FILE_VALIDATION] * config.N_FEATURES
                                      if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS
                                      else dataset_sizes[config.FILE_VALIDATION],
                                      config.BATCH_SIZE,
-                                     criterion, model, device, epoch_loss_val,
+                                     criterion, model, device,
                                      semi_supervised=semi_supervised)
 
-        loss_vals_val.append(sum(epoch_loss_val) / len(epoch_loss_val))
+        validation_loss.append(valid_loss)
         
         # Save model as the best model if the loss is lower
         if valid_loss < best_loss:
-            best_model = model        
+            best_loss = valid_loss
+            best_epoch_loss = epoch + 1
+            best_model = model
+
+        if valid_acc > best_acc:
+            best_acc = valid_acc
+            best_epoch_acc = epoch + 1
 
         secs = int(time.time() - start_time)
         mins = secs / 60
@@ -354,13 +362,18 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
 
         print(f'\tLoss: {test_loss.item():.4f}(test)\t|\tAcc: {test_acc.item() * 100:.1f}%(test)')
 
-    # Save best model to disk
-    torch.save(best_model.state_dict(), f'outputs/checkpoints/checkpoint_{semi_supervised}.tar')
+    print(f'\nBest validation loss: {best_loss.item():.4f} (Epoch: {best_epoch_loss})'
+          f'\nBest validation accuracy: {best_acc.item() * 100:.1f}% (Epoch: {best_epoch_acc})')
 
-    my_plot(np.linspace(1, num_epochs, num_epochs).astype(int), loss_vals_train,
-            loss_vals_val, semi_supervised)
+    if config.SAVE_MODEL:
+        # Save best model to disk
+        torch.save(best_model.state_dict(),
+                   f'outputs/checkpoints/checkpoint_{semi_supervised}_{best_epoch_loss}-{best_loss.item():.4f}.tar')
 
-    # Model from semi-supervised phase 1 is trained further in semi-supervised phase 2
+    my_plot(np.linspace(1, num_epochs, num_epochs).astype(int), training_loss,
+            validation_loss, semi_supervised)
+
+    # Best model from semi-supervised phase 1 is trained further in semi-supervised phase 2
     if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD or \
             semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
         return best_model
