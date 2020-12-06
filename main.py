@@ -24,7 +24,7 @@ class WordsDataset(Dataset):
         # Unknown words will have index 1
         tokenizer = text.Tokenizer(oov_token=1, filters='')
         # Join 10 word sentence and 11th word by space
-        tokenizer.fit_on_texts(' '.join(record) for record in records[:, 1:])
+        tokenizer.fit_on_texts(' '.join(record) for record in records[:, 1:3])
         # Limit to words used at least twice
         count_1 = sum(count == 1 for count in tokenizer.word_counts.values())
         # Adding 2 to num_words because (padding) index 0 and (unknown) index 1 also needs to be included
@@ -32,7 +32,7 @@ class WordsDataset(Dataset):
         # Adding 1 to vocabulary size because of additional reserved padding index 0
         config.VOCAB_SIZE = len(tokenizer.word_index) + 1 - count_1
         # Get sos token, which is needed when using an encoder-decoder model
-        config.SOS_TOKEN = tokenizer.word_index['sos']
+        config.SOS_TOKEN_VOCAB = tokenizer.word_index['sos']
         return tokenizer
 
     @staticmethod
@@ -85,17 +85,16 @@ class WordsDataset(Dataset):
             'category': [cat2id[record] for record in records[:, 0]],
             '10 words': tokenized[:, :11],
             'eleventh word': tokenized[:, 11],
-            '10 words shuffled': tokenized[:, 12:],
+            '10 words masked word': tokenized[:, 12:22],
+            'masked word': tokenized[:, 22],
+            '10 words shuffled': tokenized[:, 23:],
             '10 words shuffled to sentence indexes':
                 np.asarray([list(map(int, record.split(' '))) for record in records[:, -1]], dtype=np.int64)
         }
 
 
 def main():
-    pathlib.Path('outputs/graphs/supervised_training').mkdir(parents=True, exist_ok=True)
-    pathlib.Path('outputs/graphs/semi_supervised_training/phase_one/eleventh_word').mkdir(parents=True, exist_ok=True)
-    pathlib.Path('outputs/graphs/semi_supervised_training/phase_one/shuffled_words').mkdir(parents=True, exist_ok=True)
-    pathlib.Path('outputs/graphs/semi_supervised_training/phase_two').mkdir(parents=True, exist_ok=True)
+    pathlib.Path('outputs/graphs/').mkdir(parents=True, exist_ok=True)
 
     # Create WordsDatasets for training, validation and testing
     words_datasets = {x: WordsDataset(os.path.join(config.DATA_DIR, x))
@@ -124,23 +123,36 @@ def main():
     else:
         print('[!] Using the CPU')
 
-    # Supervised training/testing
-    training_testing.run(device, dataset_sizes, dataloaders, config.SUPERVISED_NUM_CLASSES,
-                         config.SUPERVISED, config.SUPERVISED_N_EPOCHS)
+    for model_num in config.MODEL_NUMS:
 
-    # Semi-supervised phase 1 training/testing
-    model_semi_supervised = training_testing.run(device, dataset_sizes, dataloaders, config.VOCAB_SIZE,
-                                                 config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS,
-                                                 config.SEMI_SUPERVISED_PHASE_1_N_EPOCHS)
+        # Supervised training/testing
+        training_testing.run(device, dataset_sizes, dataloaders, config.SUPERVISED_NUM_CLASSES,
+                             config.SUPERVISED, config.SUPERVISED_N_EPOCHS, model_num)
 
-    # Change last layer from classifying 11th word to categories
-    model_semi_supervised.decoder.fc = nn.Linear(config.HIDDEN_DIM,
-                                                 config.SEMI_SUPERVISED_PHASE_2_NUM_CLASSES).to(device)
+        # Semi-supervised phase 1 training/testing
+        model_semi_supervised = training_testing.run(device, dataset_sizes, dataloaders, config.VOCAB_SIZE,
+                                                     config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER,
+                                                     config.SEMI_SUPERVISED_PHASE_1_N_EPOCHS, model_num)
 
-    # Semi-supervised phase 2 training/testing
-    training_testing.run(device, dataset_sizes, dataloaders, config.SUPERVISED_NUM_CLASSES,
-                         config.SEMI_SUPERVISED_PHASE_2, config.SEMI_SUPERVISED_PHASE_2_N_EPOCHS,
-                         model_semi_supervised)
+        if model_semi_supervised is None:
+            # SimpleModel and SimpleGRUModel does currently not support the "autoencoder" and "shuffled"
+            # pre-processing techniques. For now, this is considered future work.
+            continue
+
+        if model_num == 2:
+            # Semi-supervised phase 2 training/testing
+            training_testing.run(device, dataset_sizes, dataloaders, config.SUPERVISED_NUM_CLASSES,
+                                 config.SEMI_SUPERVISED_PHASE_2, config.SEMI_SUPERVISED_PHASE_2_N_EPOCHS, model_num,
+                                 model_semi_supervised.encoder)
+        else:
+            # Change last layer from classifying 11th word to categories
+            model_semi_supervised.fc = nn.Linear(config.HIDDEN_DIM, config.SEMI_SUPERVISED_PHASE_2_NUM_CLASSES).to(
+                device)
+
+            # Semi-supervised phase 2 training/testing
+            training_testing.run(device, dataset_sizes, dataloaders, config.SUPERVISED_NUM_CLASSES,
+                                 config.SEMI_SUPERVISED_PHASE_2, config.SEMI_SUPERVISED_PHASE_2_N_EPOCHS, model_num,
+                                 model_semi_supervised)
 
 
 if __name__ == '__main__':

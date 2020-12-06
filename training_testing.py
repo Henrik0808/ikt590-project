@@ -10,6 +10,49 @@ import os
 import config
 
 
+class SimpleModel(nn.Module):
+    def __init__(self, vocab_size, embed_dim, num_class, n_features, hidden_dim):
+        super(SimpleModel, self).__init__()
+
+        self.embedding = nn.Embedding(vocab_size, embed_dim)
+        self.fc1 = nn.Linear(n_features * embed_dim, hidden_dim)  # TODO: Change number of out_features?
+        self.fc = nn.Linear(hidden_dim, num_class)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = x.long()  # self.embedding(x) expects x of type LongTensor
+
+        x = x.transpose(1, 0)
+
+        embedded = self.embedding(x)
+        out = embedded.view(embedded.size(0), -1)
+        out = self.relu(self.fc1(out))
+        out = self.fc(out)
+
+        return out
+
+
+class SimpleGRUModel(nn.Module):
+    def __init__(self, vocab_size, embed_dim, num_class, hidden_dim):
+        super(SimpleGRUModel, self).__init__()
+
+        self.embedding = nn.Embedding(vocab_size, embed_dim)
+
+        self.gru = nn.GRU(embed_dim, hidden_dim)
+        self.fc = nn.Linear(hidden_dim, num_class)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        x = x.long()  # self.embedding(x) expects x of type LongTensor
+
+        embedded = self.relu(self.embedding(x))
+        _, hidden = self.gru(embedded)
+        linear_input = hidden[-1]
+        out = self.fc(linear_input)
+
+        return out
+
+
 class Encoder(nn.Module):
     def __init__(self, input_size, embedding_size, hidden_size, num_layers, p):
         super(Encoder, self).__init__()
@@ -17,7 +60,7 @@ class Encoder(nn.Module):
         self.embedding = nn.Embedding(input_size, embedding_size)
         self.gru = nn.GRU(embedding_size, hidden_size, num_layers, bidirectional=True)
 
-        self.fc_hidden = nn.Linear(hidden_size * 2, hidden_size)
+        self.hidden = nn.Linear(hidden_size * 2, hidden_size)
         self.dropout = nn.Dropout(p)
 
     def forward(self, x):
@@ -33,9 +76,30 @@ class Encoder(nn.Module):
         # so that it can be input to the decoder which is not bidirectional
         # Also using index slicing ([idx:idx+1]) to keep the dimension
         # hidden shape: (2, batch_size, hidden_size)
-        hidden = self.fc_hidden(torch.cat((hidden[0:1], hidden[1:2]), dim=2))
+        hidden = self.hidden(torch.cat((hidden[0:1], hidden[1:2]), dim=2))
 
         return encoder_states, hidden
+
+
+class Classifier(nn.Module):
+    def __init__(
+            self, encoder, num_classes
+    ):
+        super(Classifier, self).__init__()
+
+        self.encoder = encoder
+        self.fc1 = nn.Linear(config.HIDDEN_DIM, num_classes)
+        self.relu = nn.ReLU()
+        # self.fc = nn.Linear(1024, config.SUPERVISED_NUM_CLASSES)
+
+    def forward(self, x):
+        _, hidden = self.encoder(x)
+        hidden = hidden.squeeze(0)
+        hidden = self.relu(hidden)
+        # outputs = self.relu(self.fc1(hidden))
+        predictions = self.fc1(hidden)
+
+        return predictions
 
 
 class Decoder(nn.Module):
@@ -86,7 +150,7 @@ class Decoder(nn.Module):
         # outputs shape: (1, batch_size, hidden_size)
 
         predictions = self.fc(outputs).squeeze(0)
-        # predictions: (batch_size, output_size)
+        # predictions: (batch_size, target_vocab_length)
 
         return predictions, hidden
 
@@ -102,30 +166,18 @@ class Seq2Seq(nn.Module):
     def forward(self, source, target, semi_supervised, teacher_force_ratio=config.TEACHER_FORCE_RATIO):
         batch_size = source.shape[1]
 
-        if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
-            target_len = config.N_FEATURES
-        else:
-            target_len = config.TARGET_LEN
-
-        if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:
-            target_vocab_size = config.VOCAB_SIZE
-        elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
-            target_vocab_size = config.N_FEATURES
-        else:
-            target_vocab_size = config.SUPERVISED_NUM_CLASSES
+        target_len = config.N_FEATURES
+        target_vocab_size = config.VOCAB_SIZE
 
         outputs = torch.zeros(target_len, batch_size, target_vocab_size).to(self.device)
 
         encoder_states, hidden = self.encoder(source)
 
         # Get the first input to the decoder which is the sos token
-        if self.decoder.embedding.num_embeddings == 1:
-            x = config.SOS_TOKEN_ELEVENTH
-        else:
-            x = config.SOS_TOKEN_SHUFFLED
+        x = config.SOS_TOKEN_VOCAB
 
-        for t in range(0, target_len):
-            # Use previous hidden, cell as context from encoder at start
+        for t in range(target_len):
+            # Use previous hidden as context from encoder at start
             output, hidden = self.decoder(x, encoder_states, hidden, self.device)
 
             # Store next output prediction
@@ -134,14 +186,13 @@ class Seq2Seq(nn.Module):
             # Get the best word the decoder predicted (index in the vocabulary)
             best_guess = output.argmax(1)
 
-            if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
-                # With probability of teacher_force_ratio the actual next word is used
-                # otherwise the word that the decoder predicted it to be is used.
-                # Teacher Forcing is utilized so that the model gets accustomed to seeing
-                # similar inputs at training and testing time. If teacher forcing is 1
-                # then inputs at test time could be very different from what the
-                # network is accustomed to
-                x = target[t] if random.random() < teacher_force_ratio else best_guess
+            # With probability of teacher_force_ratio the actual next word is used
+            # otherwise the word that the decoder predicted it to be is used.
+            # Teacher Forcing is utilized so that the model gets accustomed to seeing
+            # similar inputs at training and testing time. If teacher forcing is 1
+            # then inputs at test time could be very different from what the
+            # network is accustomed to
+            x = target[t] if random.random() < teacher_force_ratio else best_guess
 
         return outputs
 
@@ -162,7 +213,12 @@ def get_x_y(semi_supervised, batch, device):
     if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:
         x, y = batch['10 words'].to(device), batch['eleventh word'].to(device)
     elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
-        x, y = batch['10 words shuffled'].to(device), batch['10 words shuffled to sentence indexes'].to(device)
+        x, y = batch['10 words shuffled'].to(device), batch['10 words'].to(device)
+        y = y.transpose(1, 0)
+    elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD:
+        x, y = batch['10 words masked word'].to(device), batch['masked word'].to(device)
+    elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER:
+        x, y = batch['10 words'].to(device), batch['10 words'].to(device)
         y = y.transpose(1, 0)
     else:
         x, y = batch['10 words'].to(device), batch['category'].to(device)
@@ -191,9 +247,13 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
 
         x, y = get_x_y(semi_supervised, batch, device)
 
-        output = model(x, y, semi_supervised)
+        if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS or \
+                semi_supervised == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER:
 
-        output, y = reshape_output_and_y(output, y)
+            output = model(x, y, semi_supervised)
+            output, y = reshape_output_and_y(output, y)
+        else:
+            output = model(x)
 
         batch_loss = criterion(output, y)
         total_loss += batch_loss.item()
@@ -220,13 +280,16 @@ def test(dataloader, data_len, batch_size, criterion, model, device,
     n_batches = len(dataloader)
 
     for batch in dataloader:
-
         x, y = get_x_y(semi_supervised, batch, device)
 
         with torch.no_grad():
-            output = model(x, y, semi_supervised)
+            if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS or \
+                    semi_supervised == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER:
 
-            output, y = reshape_output_and_y(output, y)
+                output = model(x, y, semi_supervised)
+                output, y = reshape_output_and_y(output, y)
+            else:
+                output = model(x)
 
             batch_loss = criterion(output, y)
             total_loss += batch_loss.item()
@@ -235,7 +298,7 @@ def test(dataloader, data_len, batch_size, criterion, model, device,
     return total_loss / n_batches, val_acc / data_len
 
 
-def my_plot(epochs, loss_train, loss_val, semi_supervised=0):
+def my_plot(epochs, loss_train, loss_val, model_num, semi_supervised=0):
     # Save/show graph of training/validation loss
 
     plt.plot(epochs, loss_train, label='Training')
@@ -244,63 +307,147 @@ def my_plot(epochs, loss_train, loss_val, semi_supervised=0):
     plt.ylabel('Loss')
     plt.xlabel('Epoch')
 
-    if semi_supervised == config.SUPERVISED:  # Supervised
-        plt.savefig('outputs/graphs/supervised_training/loss_graph.png')
-    elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:  # Semi-supervised phase 1 eleventh word
-        plt.savefig('outputs/graphs/semi_supervised_training/phase_one/eleventh_word/loss_graph.png')
-    elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:  # Semi-supervised phase 1 shuffled words
-        plt.savefig('outputs/graphs/semi_supervised_training/phase_one/shuffled_words/loss_graph.png')
-    else:  # Semi-supervised phase 2
-        plt.savefig('outputs/graphs/semi_supervised_training/phase_two/loss_graph.png')
+    plt.savefig('outputs/graphs/' + str(model_num) + '_' + str(semi_supervised) + '_loss_graph.png')
 
     plt.show()
 
 
-def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_epochs, model=None):
+def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_epochs, model_num,
+        initialized_model=None):
     plt.ion()  # interactive mode
 
-    if model is None:
-        encoder_net = Encoder(
-            config.VOCAB_SIZE, config.EMBED_DIM, config.HIDDEN_DIM, config.NUM_LAYERS, config.ENC_DROPOUT
-        ).to(device)
+    if initialized_model is None:
+        if semi_supervised == config.SUPERVISED:
+            # Supervised training
 
-        decoder_net = Decoder(
-            config.N_FEATURES + 1 if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS
-            else 1,
-            config.EMBED_DIM,
-            config.HIDDEN_DIM,
-            config.VOCAB_SIZE if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD
-            else (config.N_FEATURES if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS
-                  else config.SUPERVISED_NUM_CLASSES),
-            config.NUM_LAYERS,
-            config.DEC_DROPOUT,
-        ).to(device)
+            if model_num == 0:
+                print("\nSimple model pure supervised:\n")
 
-        model = Seq2Seq(encoder_net, decoder_net, device).to(device)
+                model = SimpleModel(config.VOCAB_SIZE, config.EMBED_DIM, config.SUPERVISED_NUM_CLASSES,
+                                    config.N_FEATURES, config.HIDDEN_DIM).to(device)
+            elif model_num == 1:
+                print("\nSimple GRU-model pure supervised:\n")
+
+                model = SimpleGRUModel(config.VOCAB_SIZE, config.EMBED_DIM, config.SUPERVISED_NUM_CLASSES,
+                                       config.HIDDEN_DIM).to(device)
+
+            else:
+                print("\nSeq2seq model pure supervised:\n")
+
+                encoder = Encoder(
+                    config.VOCAB_SIZE, config.EMBED_DIM, config.HIDDEN_DIM, config.NUM_LAYERS, config.ENC_DROPOUT
+                ).to(device)
+
+                model = Classifier(encoder, config.SUPERVISED_NUM_CLASSES).to(device)
+        else:
+            # Semi-supervised phase 1 training
+
+            if model_num == 0:
+
+                if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:
+                    print("\nSimple model semi-supervised phase 1 11th word:\n")
+
+                    model = SimpleModel(config.VOCAB_SIZE, config.EMBED_DIM, config.VOCAB_SIZE,
+                                        config.N_FEATURES, config.HIDDEN_DIM).to(device)
+                elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD:
+                    print("\nSimple model semi-supervised phase 1 masked word:\n")
+
+                    model = SimpleModel(config.VOCAB_SIZE, config.EMBED_DIM, config.VOCAB_SIZE,
+                                        config.N_FEATURES, config.HIDDEN_DIM).to(device)
+                elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
+                    print("\nSorry, currently not supported: Simple model semi-supervised phase 1 shuffled")
+                    return None
+                else:
+                    print("\nSorry, currently not supported: Simple model semi-supervised phase 1 autoencoder")
+                    return None
+
+            elif model_num == 1:
+
+                if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:
+                    print("\nSimple GRU-model semi-supervised phase 1 11th word:\n")
+
+                    model = SimpleGRUModel(config.VOCAB_SIZE, config.EMBED_DIM, config.VOCAB_SIZE,
+                                        config.HIDDEN_DIM).to(device)
+                elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD:
+                    print("\nSimple GRU-model semi-supervised phase 1 masked word:\n")
+
+                    model = SimpleGRUModel(config.VOCAB_SIZE, config.EMBED_DIM, config.VOCAB_SIZE,
+                                           config.HIDDEN_DIM).to(device)
+                elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
+                    print("\nSorry, currently not supported: Simple GRU-model semi-supervised phase 1 shuffled")
+                    return None
+                else:
+                    print("\nSorry, currently not supported: Simple GRU-model semi-supervised phase 1 autoencoder")
+                    return None
+
+            else:
+                # model_num is 2 (seq2seq model)
+
+                encoder = Encoder(
+                    config.VOCAB_SIZE, config.EMBED_DIM, config.HIDDEN_DIM, config.NUM_LAYERS, config.ENC_DROPOUT
+                ).to(device)
+
+                if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:
+                    # Find 11th word task
+                    print("\nSeq2seq model semi-supervised phase 1 11th word:\n")
+
+                    model = Classifier(encoder, config.VOCAB_SIZE).to(device)
+                elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD:
+                    # Identify masked word task
+                    print("\nSeq2seq model semi-supervised phase 1 masked word:\n")
+
+                    model = Classifier(encoder, config.VOCAB_SIZE).to(device)
+                else:
+                    # Reordering shuffled sentence task, or auto-encoder task
+
+                    if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER:
+                        print("\nSeq2seq model semi-supervised phase 1 autoencoder:\n")
+                    else:
+                        print("\nSeq2seq model semi-supervised phase 1 shuffled:\n")
+
+                    decoder = Decoder(
+                        config.VOCAB_SIZE,
+                        config.EMBED_DIM,
+                        config.HIDDEN_DIM,
+                        config.VOCAB_SIZE,
+                        config.NUM_LAYERS,
+                        config.DEC_DROPOUT,
+                    ).to(device)
+
+                    model = Seq2Seq(encoder, decoder, device).to(device)
+    else:
+        # Semi-supervised phase 2 training
+
+        if model_num == 2:
+            print("\nSemi-supervised phase 2 seq2seq training:\n")
+
+            model = Classifier(initialized_model, config.SUPERVISED_NUM_CLASSES).to(device)
+        elif model_num == 1:
+            print("\nSemi-supervised phase 2 simple GRU-model training:\n")
+
+            model = initialized_model
+        else:
+            # model_num is 0 (SimpleModel)
+            print("\nSemi-supervised phase 2 simple model training:\n")
+
+            model = initialized_model
 
     criterion = torch.nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
+    optimizer = torch.optim.Adam([param for param in model.parameters() if param.requires_grad is True],
+                                 lr=config.LEARNING_RATE)
 
-    if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
+    if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS or \
+            semi_supervised == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER:
         train_len = dataset_sizes[config.FILE_TRAINING] * config.N_FEATURES
     else:
         train_len = dataset_sizes[config.FILE_TRAINING]
-
-    if semi_supervised == config.SUPERVISED:
-        print("Supervised training:\n")
-    elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD:
-        print("\nSemi-supervised phase 1 eleventh word training:\n")
-    elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
-        print("\nSemi-supervised phase 1 shuffled words training:\n")
-    else:
-        print("\nSemi-supervised phase 2 training:\n")
 
     if config.LOAD_MODEL:
         # Load checkpoint, if one exists
         for filename in os.listdir(config.CHECKPOINTS_DIR):
             root, ext = os.path.splitext(filename)
 
-            if root.startswith(f'checkpoint_{semi_supervised}') and ext == '.tar':
+            if root.startswith(f'checkpoint_{model_num}_{semi_supervised}') and ext == '.tar':
                 data = torch.load(config.CHECKPOINTS_DIR + filename)
                 print(f'Using checkpoint for {semi_supervised}')
                 model.load_state_dict(data)
@@ -324,14 +471,15 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
 
         valid_loss, valid_acc = test(dataloaders[config.FILE_VALIDATION],
                                      dataset_sizes[config.FILE_VALIDATION] * config.N_FEATURES
-                                     if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS
+                                     if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS or
+                                        semi_supervised == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER
                                      else dataset_sizes[config.FILE_VALIDATION],
                                      config.BATCH_SIZE,
                                      criterion, model, device,
                                      semi_supervised=semi_supervised)
 
         validation_loss.append(valid_loss)
-        
+
         # Save model as the best model if the loss is lower
         if valid_loss < best_loss:
             best_loss = valid_loss
@@ -354,7 +502,8 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
 
         test_loss, test_acc = test(dataloaders[config.FILE_TESTING],
                                    dataset_sizes[config.FILE_TESTING] * config.N_FEATURES
-                                   if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS
+                                   if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS or  # todo!
+                                      semi_supervised == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER
                                    else dataset_sizes[config.FILE_TESTING],
                                    config.BATCH_SIZE,
                                    criterion, model, device,
@@ -368,12 +517,14 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
     if config.SAVE_MODEL:
         # Save best model to disk
         torch.save(best_model.state_dict(),
-                   f'outputs/checkpoints/checkpoint_{semi_supervised}_{best_epoch_loss}-{best_loss.item():.4f}.tar')
+                   f'outputs/checkpoints/checkpoint_{model_num}_{semi_supervised}_{best_epoch_loss}-{best_loss.item():.4f}.tar')
 
     my_plot(np.linspace(1, num_epochs, num_epochs).astype(int), training_loss,
-            validation_loss, semi_supervised)
+            validation_loss, model_num, semi_supervised)
 
     # Best model from semi-supervised phase 1 is trained further in semi-supervised phase 2
     if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_ELEVENTH_WORD or \
-            semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS:
+            semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS or \
+            semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD or \
+            semi_supervised == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER:
         return best_model

@@ -105,12 +105,18 @@ if __name__ == '__main__':
 
                 # the 10 first words
                 X = words[head:tail]
+                random_word_index_missing = random.randint(0, 9)
+                # Get masked word
+                X_random_word_missing = X[random_word_index_missing]
+                X_missing_word = X[:]
+                X_missing_word[random_word_index_missing] = '[MASK]'
                 X_shuffled = X[:]
                 # X_shuffled: X (10 words) shuffled
                 random.shuffle(X_shuffled)
                 X_shuffled_to_sentence_indexes = shuffled_words_to_sentence_indexes(X_shuffled, X)
                 X_shuffled_to_sentence_indexes = ' '.join(X_shuffled_to_sentence_indexes)
                 X = ' '.join(X)
+                X_missing_word = ' '.join(X_missing_word)
                 X_shuffled = ' '.join(X_shuffled)
                 # Add a 'sos ' (start of sequence) word, which is needed when using an encoder-decoder model,
                 # before the start of the 10 word sentence
@@ -118,7 +124,8 @@ if __name__ == '__main__':
                 # the 11th word
                 Y = words[tail]
 
-                records.append((id2cat[category_id], X, Y, X_shuffled, str(X_shuffled_to_sentence_indexes)))
+                records.append((id2cat[category_id], X, Y, X_missing_word, X_random_word_missing,
+                                X_shuffled, str(X_shuffled_to_sentence_indexes)))
                 metrics[id2cat[category_id]] += 1
 
     # Metrics
