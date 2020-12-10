@@ -1,13 +1,14 @@
+import os
+import random
 import time
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
-import random
-import os
 
 import config
+from main import experiment_to_filename, experiment_to_filename_phase1
 
 
 class SimpleModel(nn.Module):
@@ -299,17 +300,25 @@ def test(dataloader, data_len, batch_size, criterion, model, device,
 
 
 def my_plot(epochs, loss_train, loss_val, model_num, semi_supervised=0):
-    # Save/show graph of training/validation loss
+    if config._experiment:
+        # Yoink the data to a csv file instead
+        fn = experiment_to_filename_phase1(config._experiment) if config._experiment['phase1'] else experiment_to_filename(config._experiment)
+        with open('outputs/experiments/' + fn, 'w', encoding='utf-8') as f:
+            f.write('epoch,loss_train,loss_val\n')
+            for row in zip(epochs, loss_train, loss_val):
+                f.write(str(','.join(str(float(x)) for x in row)) + '\n')
+    else:
+        # Save/show graph of training/validation loss
 
-    plt.plot(epochs, loss_train, label='Training')
-    plt.plot(epochs, loss_val, label='Validation')
-    plt.legend(loc='upper right')
-    plt.ylabel('Loss')
-    plt.xlabel('Epoch')
+        plt.plot(epochs, loss_train, label='Training')
+        plt.plot(epochs, loss_val, label='Validation')
+        plt.legend(loc='upper right')
+        plt.ylabel('Loss')
+        plt.xlabel('Epoch')
 
-    plt.savefig('outputs/graphs/' + str(model_num) + '_' + str(semi_supervised) + '_loss_graph.png')
+        plt.savefig('outputs/graphs/' + str(model_num) + '_' + str(semi_supervised) + '_loss_graph.png')
 
-    plt.show()
+        plt.show()
 
 
 def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_epochs, model_num,

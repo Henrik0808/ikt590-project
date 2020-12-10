@@ -1,7 +1,7 @@
 TRAINING_RATIO = 0.8
 VAL_RATIO = 0.1
 TEST_RATIO = 0.1
-SIZE_OF_DATASET = 50_000
+SIZE_OF_DATASET = 100_000
 
 DATA_DIR = 'data/'
 OUTPUTS_DIR = 'outputs/'
@@ -56,8 +56,8 @@ TARGET_LEN = 1
 
 FORCE_CPU = False
 
-LOAD_MODEL = True
-SAVE_MODEL = True
+LOAD_MODEL = False
+SAVE_MODEL = False
 
 # Supervised (input: 10 words, output: category)
 SUPERVISED_NUM_CLASSES = len(categories)

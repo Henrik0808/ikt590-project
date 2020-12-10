@@ -1,5 +1,7 @@
 import os
 import pathlib
+import random
+from itertools import product
 
 import numpy as np
 import torch
@@ -154,6 +156,142 @@ def main():
                                  config.SEMI_SUPERVISED_PHASE_2, config.SEMI_SUPERVISED_PHASE_2_N_EPOCHS, model_num,
                                  model_semi_supervised)
 
+def experiment_runner():
+    # Get dataset size
+    data_size = 0
+    with utils.cwd(config.DATA_DIR):
+        for file in (
+            config.FILE_TRAINING,
+            config.FILE_VALIDATION,
+            config.FILE_TESTING
+        ):
+            with open(file, encoding='utf-8') as f:
+                data_size += sum(1 for line in f)
+
+    random.seed(42) # for predictability
+
+    words_datasets = {x: WordsDataset(os.path.join(config.DATA_DIR, x))
+                      for x in [config.FILE_TRAINING, config.FILE_VALIDATION, config.FILE_TESTING]}
+
+    # Create Dataloaders for training, validation and testing
+    dataloaders = {x: DataLoader(words_datasets[x], batch_size=config.BATCH_SIZE,
+                                 shuffle=True, num_workers=config.NUM_WORKERS)
+                   for x in [config.FILE_TRAINING, config.FILE_VALIDATION, config.FILE_TESTING]}
+
+    dataset_sizes = {x: len(words_datasets[x]) for x in [config.FILE_TRAINING,
+                                                         config.FILE_VALIDATION,
+                                                         config.FILE_TESTING]}
+
+    # 3 models
+    models = range(3)
+    # 4 preprocessing + 1 supervised
+    preprocs = range(5)
+
+    experiments = [{
+            'size': data_size,
+            'preproc': mutation[0],
+            'model': mutation[1],
+        } for mutation in product(preprocs, models)]
+
+    # Make sure output folder exist
+    pathlib.Path('outputs/experiments/').mkdir(parents=True, exist_ok=True)
+
+    # Dismiss some experiments
+    todo_experiments = list(dismiss_experiments(experiments))
+
+    print(f'TODO: {len(todo_experiments)} experiments:')
+    for experiment in todo_experiments:
+        print(experiment)
+
+    # Run program on GPU if available, else run on CPU
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    if config.FORCE_CPU:
+        # Force running on CPU
+        device = 'cpu'
+
+    if device.type == 'cuda':
+        print('[*] Using the GPU:', torch.cuda.get_device_name(device))
+        if torch.cuda.device_count() > 1:
+            print('[!] Multiple GPUs detected, only one device will be used')
+    else:
+        print('[!] Using the CPU')
+
+    for experiment in todo_experiments:
+        config._experiment = experiment # hacky
+
+        if experiment['preproc'] == config.SUPERVISED:
+            config._experiment['phase1'] = False
+            training_testing.run(device, dataset_sizes, dataloaders, config.SUPERVISED_NUM_CLASSES,
+                                experiment['preproc'], config.SUPERVISED_N_EPOCHS, experiment['model'])
+            continue
+
+        # Semi-supervised phase 1 training/testing
+        config._experiment['phase1'] = True
+        model_semi_supervised = training_testing.run(device, dataset_sizes, dataloaders, config.VOCAB_SIZE,
+                                                     experiment['preproc'],
+                                                     config.SEMI_SUPERVISED_PHASE_1_N_EPOCHS, experiment['model'])
+
+        if model_semi_supervised is None:
+            # SimpleModel and SimpleGRUModel does currently not support the "autoencoder" and "shuffled"
+            # pre-processing techniques. For now, this is considered future work.
+            print('[!!!]')
+            continue
+
+        config._experiment['phase1'] = False
+        if experiment['model'] == 2: # seq2seq
+            # Semi-supervised phase 2 training/testing
+            training_testing.run(device, dataset_sizes, dataloaders, config.SUPERVISED_NUM_CLASSES,
+                                 config.SEMI_SUPERVISED_PHASE_2, config.SEMI_SUPERVISED_PHASE_2_N_EPOCHS, experiment['model'],
+                                 model_semi_supervised.encoder)
+        else:
+            # Change last layer from classifying 11th word to categories
+            model_semi_supervised.fc = nn.Linear(config.HIDDEN_DIM, config.SEMI_SUPERVISED_PHASE_2_NUM_CLASSES).to(
+                device)
+
+            # Semi-supervised phase 2 training/testing
+            training_testing.run(device, dataset_sizes, dataloaders, config.SUPERVISED_NUM_CLASSES,
+                                 config.SEMI_SUPERVISED_PHASE_2, config.SEMI_SUPERVISED_PHASE_2_N_EPOCHS, experiment['model'],
+                                 model_semi_supervised)
+
+def _experiment_to_filename_partial(experiment):
+    preproc_map = {0: 'supervised', 1: 'eleventh', 2: 'shuffled', 3: 'masked', 4: 'autoenc'}
+    model_map = {0: 'simple', 1: 'simplegru', 2: 'seq2seq'}
+    return f'{experiment["size"]}_{preproc_map[experiment["preproc"]]}_{model_map[experiment["model"]]}'
+
+def experiment_to_filename(experiment):
+    return _experiment_to_filename_partial(experiment) + '.csv'
+
+def experiment_to_filename_phase1(experiment):
+    return _experiment_to_filename_partial(experiment) + '_phase1.csv'
+
+def dismiss_experiments(experiments):
+    for experiment in experiments:
+        if not pathlib.Path(
+            # Dismiss experiments we got the results from already
+            'outputs/experiments/' + experiment_to_filename(experiment)
+        ).is_file() and (
+            # SimpleModel and SimpleGRUModel does currently not support the "autoencoder" and "shuffled"
+            # pre-processing techniques. For now, this is considered future work.
+            experiment['model'] not in (0, 1)
+            or experiment['preproc'] not in (2, 4)
+        ):
+            yield experiment
 
 if __name__ == '__main__':
-    main()
+    import argparse
+    parser = argparse.ArgumentParser('Run ML project.')
+    parser.add_argument(
+            '--experiments',
+            action='store_const',
+            const=True,
+            default=False,
+    )
+    args = parser.parse_args()
+
+    config._experiment = None # hacky
+
+    if args.experiments:
+        experiment_runner()
+    else:
+        main()
