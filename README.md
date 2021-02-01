@@ -1,6 +1,6 @@
-# IKT442 Project - Semi-supervised learning for text classification
+# IKT590 Project - Semi-supervised learning for text classification
 
-Student project for IKT442 ICT Seminar 3
+Student project for IKT590 Master's Thesis
 
 ## Usage (Windows)
 
