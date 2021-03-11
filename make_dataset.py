@@ -42,6 +42,7 @@ def shuffled_words_to_sentence_indexes(words_shuffled, words):
 
 if __name__ == '__main__':
     id2cat, cat2id, categories_flat = get_categories()
+    categories_flat = categories_flat[:15]
     print('Working on', len(cat2id), 'categories;',
           ', '.join(cat2id.keys()))
 
@@ -105,27 +106,26 @@ if __name__ == '__main__':
 
                 # the 10 first words
                 X = words[head:tail]
-                random_word_index_missing = random.randint(0, 9)
+                #random_word_index_missing = random.randint(0, 9)
                 # Get masked word
-                X_random_word_missing = X[random_word_index_missing]
-                X_missing_word = X[:]
-                X_missing_word[random_word_index_missing] = '[MASK]'
-                X_shuffled = X[:]
+                #X_random_word_missing = X[random_word_index_missing]
+                #X_missing_word = X[:]
+                #X_missing_word[random_word_index_missing] = '[MASK]'
+                #X_shuffled = X[:]
                 # X_shuffled: X (10 words) shuffled
-                random.shuffle(X_shuffled)
-                X_shuffled_to_sentence_indexes = shuffled_words_to_sentence_indexes(X_shuffled, X)
-                X_shuffled_to_sentence_indexes = ' '.join(X_shuffled_to_sentence_indexes)
+                ##random.shuffle(X_shuffled)
+                #X_shuffled_to_sentence_indexes = shuffled_words_to_sentence_indexes(X_shuffled, X)
+                #X_shuffled_to_sentence_indexes = ' '.join(X_shuffled_to_sentence_indexes)
                 X = ' '.join(X)
-                X_missing_word = ' '.join(X_missing_word)
-                X_shuffled = ' '.join(X_shuffled)
+                #X_missing_word = ' '.join(X_missing_word)
+                #X_shuffled = ' '.join(X_shuffled)
                 # Add a 'sos ' (start of sequence) word, which is needed when using an encoder-decoder model,
                 # before the start of the 10 word sentence
-                X = 'sos ' + X
+                X = 'sos [MASK] ' + X
                 # the 11th word
                 Y = words[tail]
 
-                records.append((id2cat[category_id], X, Y, X_missing_word, X_random_word_missing,
-                                X_shuffled, str(X_shuffled_to_sentence_indexes)))
+                records.append((id2cat[category_id], X, Y))
                 metrics[id2cat[category_id]] += 1
 
     # Metrics
