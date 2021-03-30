@@ -99,7 +99,7 @@ class PadSequence:
 
         sequences = [torch.Tensor(t) for t in sequences]
 
-        if isinstance(config.MODEL, training_testing.SimpleModel):
+        if config.USING_SIMPLE_MODEL:
 
             sequences_padded = sequence.pad_sequences(sequences, maxlen=config.MAX_QUERY_LEN,
                                                       dtype=np.int64, padding='post',
@@ -313,7 +313,7 @@ def main():
     config.SUPERVISED = config.SUPERVISED_BANKING77
 
     # Choose phase 1
-    config.PHASE_1 = config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER_20NEWS
+    config.PHASE_1 = config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_20NEWS
 
     # Choose phase 2
     config.PHASE_2 = config.SEMI_SUPERVISED_PHASE_2_BANKING77

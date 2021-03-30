@@ -318,7 +318,7 @@ def get_x_y(semi_supervised, batch, device, model):
             semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_CLINC150:
         y = y.transpose(1, 0)
 
-    if not isinstance(config.MODEL, SimpleModel):
+    if not config.USING_SIMPLE_MODEL:
         # Swapping dimensions of x to make it's shape correct for the GRU without batch_first=True,
         # which expects an input of shape (seq_length, batch_size, hidden_size)
         x = x.transpose(1, 0)
@@ -351,6 +351,8 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
         data = dataloaders[config.FILE_TRAINING_CLINC150]
     elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_CLINC150:
         data = dataloaders[config.FILE_TRAINING_CLINC150]
+
+    del dataloaders
 
     # Get number of batches
     n_batches = len(data)
@@ -402,8 +404,13 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
                     y_temp = torch.tensor([i[idx] for i in y]).to(device)
                     batch_loss = criterion(outputs[idx], y_temp)
                     loss += batch_loss
-                    total_loss += loss.item()
+                    total_loss += batch_loss.item()
                     train_acc += (outputs[idx].argmax(1) == y_temp).sum().item()
+
+                del idx
+                del target_len
+                del y_temp
+                del outputs
 
                 loss.backward()
             else:
@@ -419,6 +426,12 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
         # Clip to avoid exploding gradient problems, makes sure grads are
         # within an okay range
         # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1).to(device)
+
+        # Free unused variables from memory
+        del batch_loss
+        del loss
+        del x
+        del y
 
         optimizer.step()
 
@@ -822,12 +835,14 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
         if load_pretrained_model(model_num, semi_supervised) is not None:
             print(f'Skipping training model {config.MODEL_MAP[model_num]}, because saved checkpoint already exists')
 
+            del model
             return
 
     if semi_supervised == config.PHASE_2:
         model, optimizer, _ = load_pretrained_model(model_num, config.PHASE_1, model, optimizer)
 
-    config.MODEL = model
+    if isinstance(model, SimpleModel):
+        config.USING_SIMPLE_MODEL = True
 
     if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER_CLINC150 or \
             semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS_CLINC150 or \
