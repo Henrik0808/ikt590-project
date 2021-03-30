@@ -128,7 +128,7 @@ class PadSequence:
             # Get each shuffled sequence and pad it
             queries = [x[label] for x in sorted_batch]
 
-            queries = [torch.Tensor(t).to(config.DEVICE) for t in queries]
+            queries = [torch.Tensor(t, device=config.DEVICE) for t in queries]
 
             queries_padded = torch.nn.utils.rnn.pad_sequence(queries, batch_first=True).to(config.DEVICE)
 

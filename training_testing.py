@@ -177,7 +177,7 @@ class Decoder(nn.Module):
 
     def forward(self, x, encoder_states, hidden, device):
         if isinstance(x, int):
-            x = torch.tensor([x for _ in range(hidden.shape[1])], dtype=torch.int64).to(device)
+            x = torch.tensor([x for _ in range(hidden.shape[1])]).type(torch.LongTensor).to(device)
 
         # x shape: (batch_size), needs to be (1, batch_size).
         # seq_length is 1 here because a single word is sent in and not a sentence
@@ -241,7 +241,7 @@ class Seq2Seq(nn.Module):
             #target_len = 1
             #num_classes = config.NUM_CLASSES
 
-        outputs = torch.zeros(target_len, batch_size, num_classes).to(self.device)
+        outputs = torch.zeros(target_len, batch_size, num_classes, device=self.device)
 
         encoder_states, hidden = self.encoder(source, x_lengths)
 
@@ -330,8 +330,8 @@ def get_x_y(semi_supervised, batch, device, model):
 def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supervised=0):
     # Train the model
 
-    total_loss = torch.zeros(1, dtype=torch.float).to(device)
-    train_acc = torch.zeros(1, dtype=torch.float).to(device)
+    total_loss = torch.zeros(1, dtype=torch.float, device=device)
+    train_acc = torch.zeros(1, dtype=torch.float, device=device)
 
     if semi_supervised == config.SUPERVISED_20NEWS or \
             semi_supervised == config.SEMI_SUPERVISED_PHASE_2_20NEWS:
@@ -391,7 +391,7 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
 
                 y = y.transpose(1, 0)
 
-                loss = torch.zeros(1).to(device)
+                loss = torch.zeros(1, device=device)
 
                 if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_20NEWS or \
                         semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_CLINC150:
@@ -401,7 +401,7 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
                     target_len = x_lengths[0]
 
                 for idx in range(target_len):
-                    y_temp = torch.tensor([i[idx] for i in y]).to(device)
+                    y_temp = torch.tensor([i[idx] for i in y], device=device)
                     batch_loss = criterion(outputs[idx], y_temp)
                     loss += batch_loss
                     total_loss += batch_loss.item()
@@ -490,8 +490,8 @@ def test(dataloaders, dataset_sizes, batch_size, criterion, model, device,
     else:
         data_len = dataset_sizes[config.FILE_VALIDATION_BANKING77]
 
-    total_loss = torch.zeros(1, dtype=torch.float).to(device)
-    val_acc = torch.zeros(1, dtype=torch.float).to(device)
+    total_loss = torch.zeros(1, dtype=torch.float, device=device)
+    val_acc = torch.zeros(1, dtype=torch.float, device=device)
 
     # Get number of batches
     n_batches = len(dataloader)
@@ -527,7 +527,7 @@ def test(dataloaders, dataset_sizes, batch_size, criterion, model, device,
 
                     y = y.transpose(1, 0)
 
-                    loss = torch.zeros(1).to(device)
+                    loss = torch.zeros(1, device=device)
 
                     if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_20NEWS or \
                             semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_CLINC150:
@@ -537,7 +537,7 @@ def test(dataloaders, dataset_sizes, batch_size, criterion, model, device,
                         target_len = x_lengths[0]
 
                     for idx in range(target_len):
-                        y_temp = torch.tensor([i[idx] for i in y]).to(device)
+                        y_temp = torch.tensor([i[idx] for i in y], device=device)
                         batch_loss = criterion(outputs[idx], y_temp)
                         loss += batch_loss
                         total_loss += loss.item()
