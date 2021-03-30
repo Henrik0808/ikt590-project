@@ -391,7 +391,7 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
 
                 y = y.transpose(1, 0)
 
-                loss = torch.zeros(1, device=device)
+                loss = torch.zeros(1)
 
                 if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_20NEWS or \
                         semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_CLINC150:
@@ -403,7 +403,7 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
                 for idx in range(target_len):
                     y_temp = torch.tensor([i[idx] for i in y], device=device)
                     batch_loss = criterion(outputs[idx], y_temp)
-                    loss += batch_loss
+                    loss += batch_loss.to('cpu')
                     total_loss += batch_loss.item()
                     train_acc += (outputs[idx].argmax(1) == y_temp).sum().item()
 
