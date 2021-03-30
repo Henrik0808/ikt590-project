@@ -356,8 +356,8 @@ def main():
         print('[!] Using the CPU')
 
     for model_num in config.MODEL_NUMS:
-        if model_num == 0 or model_num == 1:  # todo: remove later
-            continue
+        #if model_num == 0 or model_num == 1:  # todo: remove later
+            #continue
 
         # Supervised training/testing
         training_testing.run(device, dataset_sizes, dataloaders, config.NUM_CLASSES,
@@ -460,7 +460,7 @@ def experiment_runner():
         # Force running on CPU
         device = 'cpu'
 
-    if device.type == 'cuda':
+    if device != 'cpu':
         print('[*] Using the GPU:', torch.cuda.get_device_name(device))
         if torch.cuda.device_count() > 1:
             print('[!] Multiple GPUs detected, only one device will be used')

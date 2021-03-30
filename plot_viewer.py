@@ -92,6 +92,9 @@ def save_plots():
     parse_paths(pathlib.Path(path) for path in [pathlib.Path('outputs/experiments/')])
 
     for sup_down in paths_supervised_downstream:
+        if not sup_down:
+            continue
+
         down = sup_down[0]
         sup = sup_down[1]
 
