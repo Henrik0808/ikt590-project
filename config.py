@@ -3,7 +3,7 @@ import json
 TRAINING_RATIO = 0.8
 VAL_RATIO = 0.1
 TEST_RATIO = 0.1
-SIZE_OF_DATASET = 500_000
+SIZE_OF_DATASET = 25_000
 
 DATA_DIR = 'data/'
 OUTPUTS_DIR = 'outputs/'
@@ -31,7 +31,7 @@ FILE_TESTING = 'words_test.csv'
 FILE_TESTING_RNN = 'words_test_rnn.csv'
 
 SEMI_SUPERVISED = None
-USING_SIMPLE_MODEL = None
+MODEL = None
 
 SUPERVISED_BANKING77 = 0
 SUPERVISED_20NEWS = 1
@@ -119,7 +119,7 @@ FORCE_CPU = False
 SAVE_MODEL = True
 CONTINUE_TRAINING_MODEL = False
 
-N_EPOCHS = 200
+N_EPOCHS = 1
 
 # Supervised (input: 10 words, output: category)
 SUPERVISED_NUM_CLASSES_20NEWS = len(categories_20news)

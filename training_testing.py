@@ -318,7 +318,7 @@ def get_x_y(semi_supervised, batch, device, model):
             semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_CLINC150:
         y = y.transpose(1, 0)
 
-    if not config.USING_SIMPLE_MODEL:
+    if not isinstance(config.MODEL, SimpleModel):
         # Swapping dimensions of x to make it's shape correct for the GRU without batch_first=True,
         # which expects an input of shape (seq_length, batch_size, hidden_size)
         x = x.transpose(1, 0)
@@ -841,8 +841,7 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
     if semi_supervised == config.PHASE_2:
         model, optimizer, _ = load_pretrained_model(model_num, config.PHASE_1, model, optimizer)
 
-    if isinstance(model, SimpleModel):
-        config.USING_SIMPLE_MODEL = True
+    config.MODEL = model
 
     if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER_CLINC150 or \
             semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS_CLINC150 or \

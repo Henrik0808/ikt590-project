@@ -99,7 +99,7 @@ class PadSequence:
 
         sequences = [torch.Tensor(t) for t in sequences]
 
-        if config.USING_SIMPLE_MODEL:
+        if isinstance(config.MODEL, training_testing.SimpleModel):
 
             sequences_padded = sequence.pad_sequences(sequences, maxlen=config.MAX_QUERY_LEN,
                                                       dtype=np.int64, padding='post',
