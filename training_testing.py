@@ -177,7 +177,7 @@ class Decoder(nn.Module):
 
     def forward(self, x, encoder_states, hidden, device):
         if isinstance(x, int):
-            x = torch.tensor([x for _ in range(hidden.shape[1])], dtype=torch.int64).to(device)
+            x = torch.tensor([x for _ in range(hidden.shape[1])]).type(torch.LongTensor).to(device)
 
         # x shape: (batch_size), needs to be (1, batch_size).
         # seq_length is 1 here because a single word is sent in and not a sentence
@@ -241,7 +241,7 @@ class Seq2Seq(nn.Module):
             #target_len = 1
             #num_classes = config.NUM_CLASSES
 
-        outputs = torch.zeros(target_len, batch_size, num_classes).to(self.device)
+        outputs = torch.zeros(target_len, batch_size, num_classes, device=self.device)
 
         encoder_states, hidden = self.encoder(source, x_lengths)
 
@@ -318,7 +318,7 @@ def get_x_y(semi_supervised, batch, device, model):
             semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_CLINC150:
         y = y.transpose(1, 0)
 
-    if not isinstance(config.MODEL, SimpleModel):
+    if not config.USING_SIMPLE_MODEL:
         # Swapping dimensions of x to make it's shape correct for the GRU without batch_first=True,
         # which expects an input of shape (seq_length, batch_size, hidden_size)
         x = x.transpose(1, 0)
@@ -352,6 +352,8 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
     elif semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_CLINC150:
         data = dataloaders[config.FILE_TRAINING_CLINC150]
 
+    del dataloaders
+
     # Get number of batches
     n_batches = len(data)
 
@@ -359,6 +361,8 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
         optimizer.zero_grad()
 
         x, y, x_lengths = get_x_y(semi_supervised, batch, device, model)
+
+        del batch
 
         if (semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS_20NEWS or
             semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS_BANKING77 or
@@ -380,6 +384,8 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
             loss.backward()
 
             train_acc += (out.argmax(1) == y).sum().item()
+
+            del out
         else:
             if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_20NEWS or \
                     semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_CLINC150 or \
@@ -402,8 +408,13 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
                     y_temp = torch.tensor([i[idx] for i in y]).to(device)
                     batch_loss = criterion(outputs[idx], y_temp)
                     loss += batch_loss
-                    total_loss += loss.item()
+                    total_loss += batch_loss.item()
                     train_acc += (outputs[idx].argmax(1) == y_temp).sum().item()
+
+                del idx
+                del target_len
+                del y_temp
+                del outputs
 
                 loss.backward()
             else:
@@ -416,10 +427,20 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
 
                 train_acc += (out.argmax(1) == y).sum().item()
 
+                del out
+
         # Clip to avoid exploding gradient problems, makes sure grads are
         # within an okay range
-        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1).to(device)
+        #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1).to(device)
 
+        # Free unused variables from memory
+        del batch_loss
+        del loss
+        del x
+        del y
+        del x_lengths
+
+        #torch.cuda.empty_cache()
         optimizer.step()
 
         if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER_CLINC150 or \
@@ -477,8 +498,8 @@ def test(dataloaders, dataset_sizes, batch_size, criterion, model, device,
     else:
         data_len = dataset_sizes[config.FILE_VALIDATION_BANKING77]
 
-    total_loss = torch.zeros(1, dtype=torch.float).to(device)
-    val_acc = torch.zeros(1, dtype=torch.float).to(device)
+    total_loss = torch.zeros(1, dtype=torch.float, device=device)
+    val_acc = torch.zeros(1, dtype=torch.float, device=device)
 
     # Get number of batches
     n_batches = len(dataloader)
@@ -514,7 +535,7 @@ def test(dataloaders, dataset_sizes, batch_size, criterion, model, device,
 
                     y = y.transpose(1, 0)
 
-                    loss = torch.zeros(1).to(device)
+                    loss = torch.zeros(1, device=device)
 
                     if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_20NEWS or \
                             semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_CLINC150:
@@ -524,10 +545,10 @@ def test(dataloaders, dataset_sizes, batch_size, criterion, model, device,
                         target_len = x_lengths[0]
 
                     for idx in range(target_len):
-                        y_temp = torch.tensor([i[idx] for i in y]).to(device)
+                        y_temp = torch.tensor([i[idx] for i in y], device=device)
                         batch_loss = criterion(outputs[idx], y_temp)
                         loss += batch_loss
-                        total_loss += loss.item()
+                        total_loss += batch_loss.item()
                         val_acc += (outputs[idx].argmax(1) == y_temp).sum().item()
                 else:
                     out = model(x, x_lengths)
@@ -822,12 +843,17 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
         if load_pretrained_model(model_num, semi_supervised) is not None:
             print(f'Skipping training model {config.MODEL_MAP[model_num]}, because saved checkpoint already exists')
 
+            del model
+            #torch.cuda.empty_cache()
             return
 
     if semi_supervised == config.PHASE_2:
         model, optimizer, _ = load_pretrained_model(model_num, config.PHASE_1, model, optimizer)
 
-    config.MODEL = model
+    if isinstance(model, SimpleModel):
+        config.USING_SIMPLE_MODEL = True
+    else:
+        config.USING_SIMPLE_MODEL = False
 
     if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER_CLINC150 or \
             semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS_CLINC150 or \

@@ -99,7 +99,7 @@ class PadSequence:
 
         sequences = [torch.Tensor(t) for t in sequences]
 
-        if isinstance(config.MODEL, training_testing.SimpleModel):
+        if config.USING_SIMPLE_MODEL:
 
             sequences_padded = sequence.pad_sequences(sequences, maxlen=config.MAX_QUERY_LEN,
                                                       dtype=np.int64, padding='post',
@@ -119,7 +119,7 @@ class PadSequence:
 
         # Also need to store the length of each sequence
         # This is later needed in order to unpad the sequences
-        lengths = torch.LongTensor([len(x) for x in sequences]).to(config.DEVICE)
+        lengths = torch.LongTensor([len(x) for x in sequences])
 
         if config.SEMI_SUPERVISED == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER_CLINC150:
             # Don't forget to grab the labels of the *sorted* batch
@@ -128,13 +128,13 @@ class PadSequence:
             # Get each shuffled sequence and pad it
             queries = [x[label] for x in sorted_batch]
 
-            queries = [torch.Tensor(t).to(config.DEVICE) for t in queries]
+            queries = [torch.Tensor(t, device=config.DEVICE) for t in queries]
 
             queries_padded = torch.nn.utils.rnn.pad_sequence(queries, batch_first=True).to(config.DEVICE)
 
             labels = queries_padded
         else:
-            labels = torch.LongTensor([c[label] for c in sorted_batch]).to(config.DEVICE)
+            labels = torch.LongTensor([c[label] for c in sorted_batch])
 
         return sequences_padded, lengths, labels
 
@@ -313,7 +313,7 @@ def main():
     config.SUPERVISED = config.SUPERVISED_BANKING77
 
     # Choose phase 1
-    config.PHASE_1 = config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER_20NEWS
+    config.PHASE_1 = config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_20NEWS
 
     # Choose phase 2
     config.PHASE_2 = config.SEMI_SUPERVISED_PHASE_2_BANKING77
@@ -356,8 +356,8 @@ def main():
         print('[!] Using the CPU')
 
     for model_num in config.MODEL_NUMS:
-        if model_num == 0 or model_num == 1:  # todo: remove later
-            continue
+        #if model_num == 0 or model_num == 1:  # todo: remove later
+            #continue
 
         # Supervised training/testing
         training_testing.run(device, dataset_sizes, dataloaders, config.NUM_CLASSES,
@@ -460,7 +460,7 @@ def experiment_runner():
         # Force running on CPU
         device = 'cpu'
 
-    if device.type == 'cuda':
+    if device != 'cpu':
         print('[*] Using the GPU:', torch.cuda.get_device_name(device))
         if torch.cuda.device_count() > 1:
             print('[!] Multiple GPUs detected, only one device will be used')
