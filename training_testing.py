@@ -957,7 +957,7 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
                     'optimizer_state_dict': best_optimizer.state_dict(),
                     'num_epochs': tot_num_epochs
                     },
-                   f'outputs/checkpoints/{config.MODEL_MAP[model_num]}_{config.PREPROC_MAP[semi_supervised]}_{best_epoch_loss}-{best_loss.item():.4f}.tar')
+                   f'outputs/checkpoints/{config.MODEL_MAP[model_num]}_{config.PREPROC_MAP[semi_supervised]}_{best_epoch_loss}_{best_loss.item():.4f}.tar')
 
     my_plot(np.linspace(num_epochs_already_trained + 1, tot_num_epochs, num_epochs).astype(int), training_loss,
             validation_loss, model_num, semi_supervised)

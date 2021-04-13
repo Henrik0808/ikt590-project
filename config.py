@@ -51,9 +51,9 @@ SEMI_SUPERVISED_PHASE_2_BANKING77 = 14
 SEMI_SUPERVISED_PHASE_2_20NEWS = 15
 SEMI_SUPERVISED_PHASE_2_CLINC150 = 16
 
-PREPROC_MAP = {0: 'supervised banking77', 1: 'eleventh', 2: 'shuffled', 3: 'masked', 4: 'autoenc',
-               9: 'masked 20news', 10: 'masked clinc150', 12: 'autoenc 20news', 13: 'autoenc clinc150',
-               14: 'downstream banking77'}
+PREPROC_MAP = {0: 'supervised_banking77', 1: 'eleventh', 2: 'shuffled', 3: 'masked', 4: 'autoenc',
+               9: 'masked_20news', 10: 'masked_clinc150', 12: 'autoenc_20news', 13: 'autoenc_clinc150',
+               14: 'downstream_banking77'}
 
 MODEL_MAP = {0: 'simple', 1: 'simplegru', 2: 'seq2seq'}
 
@@ -119,7 +119,7 @@ FORCE_CPU = False
 SAVE_MODEL = True
 CONTINUE_TRAINING_MODEL = False
 
-N_EPOCHS = 200
+N_EPOCHS = 2
 
 # Supervised (input: 10 words, output: category)
 SUPERVISED_NUM_CLASSES_20NEWS = len(categories_20news)
