@@ -1,7 +1,8 @@
 import os
 import glob
 
-subfolders = glob.glob("outputs/*/")
+# Get files and folders in the outputs folder
+items = glob.glob("outputs/*")
 
 yes_no = None
 
@@ -10,10 +11,15 @@ while yes_no not in ('y', 'n'):
 
     if yes_no == 'y':
         # Remove all files in the outputs folder
-        for sf in subfolders:
-            files = glob.glob(sf + '*')
-            for f in files:
-                os.remove(f)
+        for i in items:
+            # If i is folder, remove files in folder
+            if os.path.isdir(i):
+                files = glob.glob(i + '/*')
+                for f in files:
+                    os.remove(f)
+            else:
+                # Remove file
+                os.remove(i)
         print('Deleted files in outputs folder')
         break
     elif yes_no == 'n':

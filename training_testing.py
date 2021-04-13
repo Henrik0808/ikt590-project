@@ -1,5 +1,6 @@
 import os
 import time
+import csv
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -630,6 +631,29 @@ def load_pretrained_model(model_num, semi_supervised, model=None, optimizer=None
     return None
 
 
+def save_summary_file(model_name, training_phase, best_epoch_loss, best_loss, best_epoch_acc, best_acc):
+
+    summary_file_path = 'outputs/summary.csv'
+    file_exists = os.path.isfile(summary_file_path)
+
+    with open(summary_file_path, mode='a', newline='') as summary_file:
+        fieldnames = ['model', 'training_phase', 'best_epoch_val_loss',
+                      'best_val_loss', 'best_epoch_val_acc', 'best_val_acc']
+
+        writer = csv.DictWriter(summary_file, fieldnames=fieldnames)
+
+        if not file_exists:
+            # Write a header, since summary_file doesn't exist yet
+            writer.writeheader()
+
+        writer.writerow({'model': model_name,
+                         'training_phase': training_phase,
+                         'best_epoch_val_loss': best_epoch_loss,
+                         'best_val_loss': '{:.4f}'.format(best_loss.item()),
+                         'best_epoch_val_acc': best_epoch_acc,
+                         'best_val_acc': '{:.4f}'.format(best_acc.item()*100)})
+
+
 def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_epochs, model_num):
     plt.ion()  # interactive mode
 
@@ -833,15 +857,18 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
 
     num_epochs_already_trained = 0
 
+    model_name = config.MODEL_MAP[model_num]
+    training_phase = config.PREPROC_MAP[semi_supervised]
+
     if config.CONTINUE_TRAINING_MODEL:
         # Continue training model, if saved model checkpoint exists
         if load_pretrained_model(model_num, semi_supervised, model, optimizer) is not None:
             model, optimizer, num_epochs_already_trained = load_pretrained_model(model_num, semi_supervised, model, optimizer)
-            print(f'Continuing training model {config.MODEL_MAP[model_num]} from epoch {num_epochs_already_trained}')
+            print(f'Continuing training model {model_name} from epoch {num_epochs_already_trained}')
     else:
         # Skip model training if saved checkpoint for model exists
         if load_pretrained_model(model_num, semi_supervised) is not None:
-            print(f'Skipping training model {config.MODEL_MAP[model_num]}, because saved checkpoint already exists')
+            print(f'Skipping training model {model_name}, because saved checkpoint already exists')
 
             del model
             #torch.cuda.empty_cache()
@@ -957,7 +984,10 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
                     'optimizer_state_dict': best_optimizer.state_dict(),
                     'num_epochs': tot_num_epochs
                     },
-                   f'outputs/checkpoints/{config.MODEL_MAP[model_num]}_{config.PREPROC_MAP[semi_supervised]}_{best_epoch_loss}_{best_loss.item():.4f}.tar')
+                   f'outputs/checkpoints/{model_name}_{training_phase}_{best_epoch_loss}_{best_loss.item():.4f}.tar')
+
+    if config.SAVE_SUMMARY_FILE:
+        save_summary_file(model_name, training_phase, best_epoch_loss, best_loss, best_epoch_acc, best_acc)
 
     my_plot(np.linspace(num_epochs_already_trained + 1, tot_num_epochs, num_epochs).astype(int), training_loss,
             validation_loss, model_num, semi_supervised)
