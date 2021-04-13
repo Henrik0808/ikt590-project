@@ -86,14 +86,14 @@ with open(DATA_DIR + FILE_CLINC150_CATEGORIES) as json_file:
     categories_clinc150 = json.load(json_file)
 
 VOCAB_SIZE = None
-EMBED_DIM = 256
-BATCH_SIZE = 1024
+EMBED_DIM = 512
+BATCH_SIZE = 512
 N_FEATURES = 10
-HIDDEN_DIM = 512
+HIDDEN_DIM = 1024
 NUM_LAYERS = 1
-ENC_DROPOUT = 0.2
+ENC_DROPOUT = 0.0
 DEC_DROPOUT = 0.0
-LEARNING_RATE = 0.001
+LEARNING_RATE = 0.0001
 TEACHER_FORCE_RATIO = 0.1
 
 NUM_WORKERS = 0  # TODO: Fix bug where NUM_WORKERS >= 4 leads to WinError 1455
@@ -112,14 +112,14 @@ TOKENIZER = None
 cat2id = None
 
 TARGET_LEN = None
-TARGET_LEN_MASKED = 3
+TARGET_LEN_MASKED = 2
 
 FORCE_CPU = False
 
 SAVE_MODEL = True
 CONTINUE_TRAINING_MODEL = False
 
-N_EPOCHS = 1
+N_EPOCHS = 200
 
 # Supervised (input: 10 words, output: category)
 SUPERVISED_NUM_CLASSES_20NEWS = len(categories_20news)

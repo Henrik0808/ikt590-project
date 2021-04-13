@@ -119,7 +119,7 @@ class PadSequence:
 
         # Also need to store the length of each sequence
         # This is later needed in order to unpad the sequences
-        lengths = torch.LongTensor([len(x) for x in sequences]).to(config.DEVICE)
+        lengths = torch.LongTensor([len(x) for x in sequences])
 
         if config.SEMI_SUPERVISED == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER_CLINC150:
             # Don't forget to grab the labels of the *sorted* batch
@@ -134,7 +134,7 @@ class PadSequence:
 
             labels = queries_padded
         else:
-            labels = torch.LongTensor([c[label] for c in sorted_batch]).to(config.DEVICE)
+            labels = torch.LongTensor([c[label] for c in sorted_batch])
 
         return sequences_padded, lengths, labels
 

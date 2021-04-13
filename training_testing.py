@@ -330,8 +330,8 @@ def get_x_y(semi_supervised, batch, device, model):
 def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supervised=0):
     # Train the model
 
-    total_loss = torch.zeros(1, dtype=torch.float, device=device)
-    train_acc = torch.zeros(1, dtype=torch.float, device=device)
+    total_loss = torch.zeros(1, dtype=torch.float).to(device)
+    train_acc = torch.zeros(1, dtype=torch.float).to(device)
 
     if semi_supervised == config.SUPERVISED_20NEWS or \
             semi_supervised == config.SEMI_SUPERVISED_PHASE_2_20NEWS:
@@ -362,6 +362,8 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
 
         x, y, x_lengths = get_x_y(semi_supervised, batch, device, model)
 
+        del batch
+
         if (semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS_20NEWS or
             semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS_BANKING77 or
             semi_supervised == config.SEMI_SUPERVISED_PHASE_1_SHUFFLED_WORDS_CLINC150 or
@@ -382,6 +384,8 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
             loss.backward()
 
             train_acc += (out.argmax(1) == y).sum().item()
+
+            del out
         else:
             if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_20NEWS or \
                     semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_CLINC150 or \
@@ -391,7 +395,7 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
 
                 y = y.transpose(1, 0)
 
-                loss = torch.zeros(1)
+                loss = torch.zeros(1).to(device)
 
                 if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_20NEWS or \
                         semi_supervised == config.SEMI_SUPERVISED_PHASE_1_MASKED_WORD_CLINC150:
@@ -401,9 +405,9 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
                     target_len = x_lengths[0]
 
                 for idx in range(target_len):
-                    y_temp = torch.tensor([i[idx] for i in y], device=device)
+                    y_temp = torch.tensor([i[idx] for i in y]).to(device)
                     batch_loss = criterion(outputs[idx], y_temp)
-                    loss += batch_loss.to('cpu')
+                    loss += batch_loss
                     total_loss += batch_loss.item()
                     train_acc += (outputs[idx].argmax(1) == y_temp).sum().item()
 
@@ -423,16 +427,20 @@ def train(train_len, optimizer, model, criterion, device, dataloaders, semi_supe
 
                 train_acc += (out.argmax(1) == y).sum().item()
 
+                del out
+
         # Clip to avoid exploding gradient problems, makes sure grads are
         # within an okay range
-        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1).to(device)
+        #torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1).to(device)
 
         # Free unused variables from memory
         del batch_loss
         del loss
         del x
         del y
+        del x_lengths
 
+        #torch.cuda.empty_cache()
         optimizer.step()
 
         if semi_supervised == config.SEMI_SUPERVISED_PHASE_1_AUTO_ENCODER_CLINC150 or \
@@ -540,7 +548,7 @@ def test(dataloaders, dataset_sizes, batch_size, criterion, model, device,
                         y_temp = torch.tensor([i[idx] for i in y], device=device)
                         batch_loss = criterion(outputs[idx], y_temp)
                         loss += batch_loss
-                        total_loss += loss.item()
+                        total_loss += batch_loss.item()
                         val_acc += (outputs[idx].argmax(1) == y_temp).sum().item()
                 else:
                     out = model(x, x_lengths)
@@ -836,6 +844,7 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
             print(f'Skipping training model {config.MODEL_MAP[model_num]}, because saved checkpoint already exists')
 
             del model
+            #torch.cuda.empty_cache()
             return
 
     if semi_supervised == config.PHASE_2:
