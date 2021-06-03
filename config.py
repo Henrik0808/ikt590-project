@@ -3,7 +3,7 @@ import json
 TRAINING_RATIO = 0.8
 VAL_RATIO = 0.1
 TEST_RATIO = 0.1
-SIZE_OF_DATASET = 1_000
+SIZE_OF_DATASET = 25_000
 
 DATA_DIR = 'data/'
 OUTPUTS_DIR = 'outputs/'
@@ -118,9 +118,10 @@ FORCE_CPU = False
 
 SAVE_MODEL = True
 SAVE_SUMMARY_FILE = True
+DELETE_SUMMARY_FILE = True
 CONTINUE_TRAINING_MODEL = False
 
-N_EPOCHS = 2
+N_EPOCHS = 200
 
 # Supervised (input: 10 words, output: category)
 SUPERVISED_NUM_CLASSES_20NEWS = len(categories_20news)

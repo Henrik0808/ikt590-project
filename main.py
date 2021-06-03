@@ -51,6 +51,8 @@ class PadSequence:
                 for idx in range(config.TARGET_LEN_MASKED):
                     rand_idx = random.randint(0, len_d - 1)
 
+                    # If using 20 newsgroups data, then len_d is always 10,
+                    # which means that this if statement is true => always 3/10 (30 %) of words are masked
                     if len_d > config.TARGET_LEN_MASKED - 1:
                         while rand_idx in random_idxs:
                             rand_idx = random.randint(0, len_d - 1)
@@ -65,9 +67,12 @@ class PadSequence:
                     masked_word = d[query][random_idx]
                     rand_num = random.random()
 
+                    # For now, this if statement is always true, since rand_num is between [0.0, 1.0) < 2.
+                    # This means that in each masked query all tokens set for masking are replaced by the [mask] token
                     if rand_num < 2:
                         d[query][random_idx] = masked_token
                     else:
+                        # Replace masked token with random token in vocabulary (currently not in use)
                         random_vocab_int = random.randint(4, config.VOCAB_SIZE - 1)
                         d[query][random_idx] = random_vocab_int
                     #else:
@@ -234,7 +239,7 @@ class WordsDataset(Dataset):
             return self.transform(sample)
 
         if 'query' in sample:
-            # Remove the sos token before the start of the 10 word sentence
+            # Remove the sos and [mask] tokens before the start of the 10 word sentence
             sample['query'] = sample['query'][2:]
 
         return sample
@@ -259,7 +264,7 @@ class WordsDataset(Dataset):
             tokenized = np.array([np.array(q, np.int64) for q in tokenized])
 
             return {
-                # -5 because of targets shifted 5 to right side 5->0, 6->1 etc
+                # -7 because of targets shifted 7 to right side 7->0, 8->1 etc
                 'category': [cat2id[record] - 7 for record in records[:, 0]],
                 'query': tokenized
             }
@@ -279,7 +284,7 @@ class WordsDataset(Dataset):
 
             return {
                 'category': [cat2id[record] - 84 for record in records[:, 0]],
-                # -82 because of targets shifted 82 to right side 82->0, 83->1 etc
+                # -84 because of targets shifted 84 to right side 84->0, 85->1 etc
                 'query': tokenized_queries
             }
 

@@ -1,5 +1,6 @@
 import os
 import glob
+import config
 
 # Get files and folders in the outputs folder
 items = glob.glob("outputs/*")
@@ -18,8 +19,9 @@ while yes_no not in ('y', 'n'):
                 for f in files:
                     os.remove(f)
             else:
-                # Remove file
-                os.remove(i)
+                if config.DELETE_SUMMARY_FILE:
+                    # Remove file
+                    os.remove(i)
         print('Deleted files in outputs folder')
         break
     elif yes_no == 'n':

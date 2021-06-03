@@ -597,6 +597,12 @@ def find_max_ndarray(ndarray):
 
 
 def find_max_query_len(dataloaders):
+    # (Currently not using clinc150 dataset)
+    # Max query len 20 newsgroups training/validation set: 10
+    # Max query len banking77 training set: 81
+    # Max query len banking77 validation set: 71
+    # => Max query len banking77 training set largest => max_query_len is max query length in banking77 training set,
+    #    to contain the max query length encountered during training/validation
     queries = dataloaders[config.FILE_TRAINING_BANKING77].dataset.records_tokenized['query']
     max_query_len = find_max_ndarray(queries)
     # - 2 below because of removing 'sos' and '[MASK]' tokens when getting query from dataset
@@ -917,7 +923,7 @@ def run(device, dataset_sizes, dataloaders, num_classes, semi_supervised, num_ep
     training_loss = []
     validation_loss = []
 
-    best_loss, best_acc, best_model, best_optimizer = float('inf'), 0, None, None
+    best_loss, best_acc, best_model, best_optimizer = float('inf'), torch.zeros(1).to(device), None, None
     best_epoch_loss, best_epoch_acc = 0, 0
 
     tot_num_epochs = num_epochs + num_epochs_already_trained
