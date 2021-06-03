@@ -1,4 +1,4 @@
-# IKT590 Project - Semi-supervised learning for text classification
+# IKT590 Project - An exploration of semi-supervised text classification
 
 Student project for IKT590 Master's Thesis
 
